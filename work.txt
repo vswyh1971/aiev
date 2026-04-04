@@ -1,0 +1,3 @@
+url:https://api.siliconflow.cn/v1/chat/completions
+model-name:THUDM/GLM-Z1-9B-0414
+api-key:sk-ptelajkuhutlnsszhadztvsayznvsxtlqclcqimuqbqmnxzn
