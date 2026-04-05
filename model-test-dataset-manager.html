@@ -556,52 +556,91 @@
         
         // 解析CSV文件
         function parseCSV(file) {
-            // 先尝试不使用表头解析，检测是否有表头
+            // 先尝试使用UTF-8编码解析
             Papa.parse(file, {
                 header: false,
                 dynamicTyping: true,
+                encoding: 'UTF-8',
                 complete: function(results) {
+                    // 检查是否有乱码（如果包含大量不可打印字符，则可能是编码问题）
+                    let hasGarbled = false;
                     const data = results.data;
-                    let headers = [];
-                    let actualData = [];
                     
-                    // 过滤掉空行和空数组
-                    const nonEmptyData = data.filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== undefined && cell.toString().trim() !== ''));
-                    
-                    // 检查第一行是否可能是表头
-                    if (nonEmptyData.length > 0) {
-                        const firstRow = nonEmptyData[0];
-                        const secondRow = nonEmptyData.length > 1 ? nonEmptyData[1] : null;
-                        
-                        // 简单判断：如果第一行都是字符串，而第二行包含数字，则第一行可能是表头
-                        let hasHeader = false;
-                        if (secondRow) {
-                            const firstRowAreStrings = firstRow.every(val => typeof val === 'string');
-                            const secondRowHasNumbers = secondRow.some(val => !isNaN(val) && typeof val !== 'boolean');
-                            hasHeader = firstRowAreStrings && secondRowHasNumbers;
-                        }
-                        
-                        if (hasHeader) {
-                            // 使用第一行作为表头
-                            headers = firstRow;
-                            actualData = nonEmptyData.slice(1);
-                        } else {
-                            // 没有表头，使用默认列名
-                            const columnsCount = firstRow.length;
-                            for (let i = 0; i < columnsCount; i++) {
-                                headers.push(`第${i+1}列`);
+                    // 简单检测：检查前10行数据是否包含乱码
+                    for (let i = 0; i < Math.min(10, data.length); i++) {
+                        const row = data[i];
+                        if (Array.isArray(row)) {
+                            for (const cell of row) {
+                                if (typeof cell === 'string' && /[\x00-\x1F\x7F-\xFF]/.test(cell)) {
+                                    hasGarbled = true;
+                                    break;
+                                }
                             }
-                            actualData = nonEmptyData;
                         }
+                        if (hasGarbled) break;
                     }
                     
-                    console.log('解析CSV文件结果:', { headers, actualData });
-                    processData(actualData, headers);
+                    if (hasGarbled) {
+                        // 如果有乱码，尝试使用GBK编码解析
+                        Papa.parse(file, {
+                            header: false,
+                            dynamicTyping: true,
+                            encoding: 'GBK',
+                            complete: function(resultsGBK) {
+                                processCSVData(resultsGBK.data);
+                            },
+                            error: function(error) {
+                                $('#file-error').text('解析CSV文件时出错: ' + error.message);
+                            }
+                        });
+                    } else {
+                        // 如果没有乱码，直接处理数据
+                        processCSVData(data);
+                    }
                 },
                 error: function(error) {
                     $('#file-error').text('解析CSV文件时出错: ' + error.message);
                 }
             });
+        }
+        
+        // 处理CSV数据
+        function processCSVData(data) {
+            let headers = [];
+            let actualData = [];
+            
+            // 过滤掉空行和空数组
+            const nonEmptyData = data.filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== undefined && cell.toString().trim() !== ''));
+            
+            // 检查第一行是否可能是表头
+            if (nonEmptyData.length > 0) {
+                const firstRow = nonEmptyData[0];
+                const secondRow = nonEmptyData.length > 1 ? nonEmptyData[1] : null;
+                
+                // 简单判断：如果第一行都是字符串，而第二行包含数字，则第一行可能是表头
+                let hasHeader = false;
+                if (secondRow) {
+                    const firstRowAreStrings = firstRow.every(val => typeof val === 'string');
+                    const secondRowHasNumbers = secondRow.some(val => !isNaN(val) && typeof val !== 'boolean');
+                    hasHeader = firstRowAreStrings && secondRowHasNumbers;
+                }
+                
+                if (hasHeader) {
+                    // 使用第一行作为表头
+                    headers = firstRow;
+                    actualData = nonEmptyData.slice(1);
+                } else {
+                    // 没有表头，使用默认列名
+                    const columnsCount = firstRow.length;
+                    for (let i = 0; i < columnsCount; i++) {
+                        headers.push(`第${i+1}列`);
+                    }
+                    actualData = nonEmptyData;
+                }
+            }
+            
+            console.log('解析CSV文件结果:', { headers, actualData });
+            processData(actualData, headers);
         }
         
         // 解析Excel文件

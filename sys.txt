@@ -1,3 +1,5 @@
 url:https://api.siliconflow.cn/v1/chat/completions
-model-name:Qwen/Qwen3-8B
+model-name1:internlm/internlm2_5-7b-chat
 api-key:sk-ptelajkuhutlnsszhadztvsayznvsxtlqclcqimuqbqmnxzn
+model-name2:Qwen/Qwen3.5-4B
+model-name3:tencent/Hunyuan-MT-7B
