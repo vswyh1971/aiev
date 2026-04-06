@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import requests
 import threading
+import chardet
 import queue
 from datetime import datetime
 from fpdf import FPDF
@@ -213,6 +214,47 @@ def init_database():
         cursor.execute("ALTER TABLE datasets ADD COLUMN created_by INTEGER")
     except sqlite3.OperationalError:
         pass  # 列已存在
+
+    # 升级大模型表结构（确保所有必要的列都存在）
+    try:
+        cursor.execute("ALTER TABLE llm_models ADD COLUMN api_key TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
+    try:
+        cursor.execute("ALTER TABLE llm_models ADD COLUMN max_tokens INTEGER DEFAULT 2048")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
+    try:
+        cursor.execute("ALTER TABLE llm_models ADD COLUMN temperature FLOAT DEFAULT 0.7")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
+    try:
+        cursor.execute("ALTER TABLE llm_models ADD COLUMN response_timeout INTEGER DEFAULT 30")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
+    try:
+        cursor.execute("ALTER TABLE llm_models ADD COLUMN status VARCHAR(20) DEFAULT 'inactive'")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
+    try:
+        cursor.execute("ALTER TABLE llm_models ADD COLUMN created_by INTEGER")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
+    try:
+        cursor.execute("ALTER TABLE llm_models ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
+    try:
+        cursor.execute("ALTER TABLE llm_models ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
     
     # 创建默认管理员账户和测试账户（如果不存在）
     test_users = [
@@ -299,7 +341,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     
     if user is None:
         raise credentials_exception
-    if not user[5]:
+    if not user[4]:
         raise HTTPException(status_code=403, detail="User inactive")
     return user
 
@@ -627,13 +669,13 @@ async def login(username: str = Form(...), password: str = Form(...)):
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(token_data, access_token_expires)
     
-    print(f"登录成功：用户={user[1]}, 角色={user[4]}")
-    
+    print(f"登录成功：用户={user[1]}, 角色={user[3]}")
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "username": user[1],
-        "role": user[4]
+        "role": user[3]
     }
 
 # ==================== 用户管理API ====================
@@ -889,11 +931,11 @@ async def get_models(current_user = Depends(get_current_user)):
     cursor.execute("SELECT * FROM llm_models")
     models = cursor.fetchall()
     conn.close()
-    
+
     return [{
         "id": m[0], "name": m[1], "provider": m[2], "model_type": m[3],
-        "api_url": m[4], "max_tokens": m[6], "temperature": m[7],
-        "status": m[9], "created_at": m[11]
+        "api_url": m[4], "api_key": m[5], "max_tokens": m[8], "temperature": m[9],
+        "status": m[10], "created_at": m[13]
     } for m in models]
 
 @app.post("/api/models")
@@ -901,11 +943,11 @@ async def add_model(model: LLMModel, current_user = Depends(get_current_user)):
     """添加大模型"""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
-    
+
     try:
         cursor.execute(
-            """INSERT INTO llm_models (name, provider, model_type, api_url, api_key, 
-                                    max_tokens, temperature, response_timeout, created_by)
+            """INSERT INTO llm_models (name, provider, model_type, api_url, api_key_encrypted,
+                                    max_tokens, temperature, response_timeout, owner_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (model.name, model.provider, model.model_type, model.api_url, model.api_key,
              model.max_tokens, model.temperature, model.timeout, current_user[0])
@@ -923,10 +965,10 @@ async def update_model(model_id: int, model: LLMModel, current_user = Depends(ge
     """更新大模型"""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
-    
+
     try:
         cursor.execute(
-            """UPDATE llm_models SET name=?, provider=?, model_type=?, api_url=?, api_key=?, 
+            """UPDATE llm_models SET name=?, provider=?, model_type=?, api_url=?, api_key_encrypted=?,
                                     max_tokens=?, temperature=?, response_timeout=?
                WHERE id=?""",
             (model.name, model.provider, model.model_type, model.api_url, model.api_key,
@@ -989,57 +1031,98 @@ async def get_datasets(current_user = Depends(get_current_user)):
     cursor.execute("SELECT * FROM datasets")
     datasets = cursor.fetchall()
     conn.close()
-    
+
     return [{
-        "id": d[0], "name": d[1], "file_path": d[2], "file_type": d[3],
-        "record_count": d[4], "created_at": d[6]
+        "id": d[0], "name": d[1], "file_path": d[3], "file_type": d[4],
+        "record_count": d[7], "columns": d[8], "encoding": d[5],
+        "created_at": d[14]
     } for d in datasets]
 
 @app.post("/api/datasets/upload")
-async def upload_dataset(file: UploadFile = File(...), name: str = Form(...), 
+async def upload_dataset(file: UploadFile = File(...), name: str = Form(...),
                         has_header: str = Form(...), current_user = Depends(get_current_user)):
     """上传数据集"""
-    upload_dir = "datasets"
+    upload_dir = "uploads/datasets"
     os.makedirs(upload_dir, exist_ok=True)
-    
+
     content = await file.read()
-    # 只使用文件名，不包含路径
     filename = os.path.basename(file.filename)
     file_path = os.path.join(upload_dir, f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}")
-    
+
     with open(file_path, "wb") as f:
         f.write(content)
-    
+
     # 检测文件类型和记录数
     file_type = os.path.splitext(filename)[1].lstrip('.').lower()
     record_count = 0
+    column_count = 0
+    # 自动检测编码
+    result = chardet.detect(content[:min(len(content), 100000)])  # 只检测前100KB以提高性能
+    detected_encoding = result['encoding'] if result['encoding'] else 'utf-8'
+    # 处理某些编码的别名
+    if detected_encoding and detected_encoding.lower() == 'gb2312':
+        detected_encoding = 'gbk'
+    elif detected_encoding and detected_encoding.lower() == 'iso-8859-1':
+        detected_encoding = 'utf-8'
+    encoding = detected_encoding
+    print(f"检测到文件编码: {encoding} (置信度: {result['confidence']:.2f})")
     
+    columns_info = []
+
     try:
         if file_type == 'csv':
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(file_path, encoding=encoding)
             record_count = len(df)
+            column_count = len(df.columns)
+            columns_info = list(df.columns)
         elif file_type in ['xlsx', 'xls']:
             df = pd.read_excel(file_path)
             record_count = len(df)
+            column_count = len(df.columns)
+            columns_info = list(df.columns)
         elif file_type == 'json':
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, 'r', encoding=encoding, errors='replace') as f:
                 data = json.load(f)
-            record_count = len(data)
+            df = pd.DataFrame(data)
+            record_count = len(df)
+            column_count = len(df.columns) if len(df) > 0 else 0
+            columns_info = list(df.columns) if len(df) > 0 else []
     except Exception as e:
-        pass
-    
-    # 保存到数据库
+        print(f"文件解析失败，尝试使用utf-8编码: {str(e)}")
+        try:
+            # 第一次失败后，使用utf-8再试一次
+            if file_type == 'csv':
+                df = pd.read_csv(file_path, encoding='utf-8', errors='replace')
+                record_count = len(df)
+                column_count = len(df.columns)
+                columns_info = list(df.columns)
+            elif file_type == 'json':
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                    data = json.load(f)
+                df = pd.DataFrame(data)
+                record_count = len(df)
+                column_count = len(df.columns) if len(df) > 0 else 0
+                columns_info = list(df.columns) if len(df) > 0 else []
+            encoding = 'utf-8'
+        except Exception as e2:
+            print(f"utf-8编码也失败: {str(e2)}")
+            pass
+
+    # 保存到数据库（使用正确的列名）
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
-    
+
     try:
         cursor.execute(
-            "INSERT INTO datasets (name, file_path, file_type, record_count, created_by) VALUES (?, ?, ?, ?, ?)",
-            (name, file_path, file_type, record_count, current_user[0])
+            """INSERT INTO datasets (name, file_name, file_path, file_format, encoding,
+                                    size_bytes, row_count, column_count, has_header, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, filename, file_path, file_type, encoding,
+             len(content), record_count, column_count, has_header == 'true', current_user[0])
         )
         conn.commit()
         dataset_id = cursor.lastrowid
-        return {"message": "数据集上传成功", "dataset_id": dataset_id, "file_path": file_path}
+        return {"message": "数据集上传成功", "dataset_id": dataset_id, "file_path": file_path, "detected_encoding": encoding}
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="数据集名称已存在")
     finally:
@@ -1053,13 +1136,15 @@ async def get_dataset(dataset_id: int, current_user = Depends(get_current_user))
     cursor.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,))
     dataset = cursor.fetchone()
     conn.close()
-    
+
     if not dataset:
         raise HTTPException(status_code=404, detail="数据集不存在")
-    
+
     return {
-        "id": dataset[0], "name": dataset[1], "file_path": dataset[2], "file_type": dataset[3],
-        "record_count": dataset[4], "created_at": dataset[6]
+        "id": dataset[0], "name": dataset[1], "file_path": dataset[3],
+        "file_type": dataset[4], "record_count": dataset[7],
+        "column_count": dataset[8], "encoding": dataset[5],
+        "created_at": dataset[14]
     }
 
 @app.get("/api/datasets/{dataset_id}/data")
@@ -1070,49 +1155,33 @@ async def get_dataset_data(dataset_id: int, current_user = Depends(get_current_u
     cursor.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,))
     dataset = cursor.fetchone()
     conn.close()
-    
+
     if not dataset:
         raise HTTPException(status_code=404, detail="数据集不存在")
-    
-    file_path = dataset[2]
-    file_type = dataset[3]
-    
+
+    file_path = dataset[3]  # file_path列
+    file_type = dataset[4]  # file_format列
+    encoding = dataset[5]   # encoding列
+    print(f"读取数据集，使用编码: {encoding}")
+
     try:
         if file_type == 'csv':
-            # 尝试读取CSV文件，处理无表头的情况
-            try:
-                df = pd.read_csv(file_path)
-                # 检查是否有表头
-                if df.columns[0].startswith('Unnamed:'):
-                    # 无表头，添加顺序号作为表头
-                    df.columns = [f'列{i+1}' for i in range(len(df.columns))]
-            except Exception:
-                # 强制无表头读取
-                df = pd.read_csv(file_path, header=None)
-                df.columns = [f'列{i+1}' for i in range(len(df.columns))]
+            df = pd.read_csv(file_path, encoding=encoding)
         elif file_type in ['xlsx', 'xls']:
-            # 尝试读取Excel文件
-            try:
-                df = pd.read_excel(file_path)
-                # 检查是否有表头
-                if df.columns[0].startswith('Unnamed:'):
-                    # 无表头，添加顺序号作为表头
-                    df.columns = [f'列{i+1}' for i in range(len(df.columns))]
-            except Exception:
-                # 强制无表头读取
-                df = pd.read_excel(file_path, header=None)
-                df.columns = [f'列{i+1}' for i in range(len(df.columns))]
+            df = pd.read_excel(file_path)
         elif file_type == 'json':
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, 'r', encoding=encoding, errors='replace') as f:
                 data = json.load(f)
             df = pd.DataFrame(data)
         else:
             raise HTTPException(status_code=400, detail=f"不支持的文件类型: {file_type}")
-        
-        # 转换为字典列表
+
+        # 将NaN值转换为None，确保JSON兼容性
+        df = df.where(pd.notnull(df), None)
+
         data = df.to_dict('records')
         columns = list(df.columns)
-        
+
         return {
             "dataset_id": dataset_id,
             "columns": columns,
@@ -1120,7 +1189,28 @@ async def get_dataset_data(dataset_id: int, current_user = Depends(get_current_u
             "record_count": len(data)
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取数据集失败: {str(e)}")
+        print(f"使用编码 {encoding} 读取失败，尝试使用utf-8: {str(e)}")
+        try:
+            # 第一次失败后，尝试用utf-8
+            if file_type == 'csv':
+                df = pd.read_csv(file_path, encoding='utf-8', errors='replace')
+            elif file_type == 'json':
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                    data = json.load(f)
+                df = pd.DataFrame(data)
+            
+            df = df.where(pd.notnull(df), None)
+            data = df.to_dict('records')
+            columns = list(df.columns)
+            
+            return {
+                "dataset_id": dataset_id,
+                "columns": columns,
+                "data": data,
+                "record_count": len(data)
+            }
+        except Exception as e2:
+            raise HTTPException(status_code=500, detail=f"读取数据集失败: {str(e)}, 重试也失败: {str(e2)}")
 
 @app.delete("/api/datasets/{dataset_id}")
 async def delete_dataset(dataset_id: int, current_user = Depends(get_current_user)):
