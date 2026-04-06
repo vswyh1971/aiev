@@ -1,0 +1,1927 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能大模型安全评估系统</title>
+    <link rel="icon" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/shield-check.svg" type="image/svg+xml">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --success-color: #06d6a0;
+            --danger-color: #ef476f;
+            --warning-color: #ffd166;
+            --dark-color: #118ab2;
+            --light-bg: #f8f9fa;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--light-bg);
+        }
+        
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 250px;
+            height: 100vh;
+            background: linear-gradient(180deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding-top: 20px;
+            z-index: 1000;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        }
+        
+        .sidebar-header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .sidebar-header h3 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .sidebar-menu {
+            padding: 20px 0;
+        }
+        
+        .menu-item {
+            padding: 12px 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .menu-item:hover, .menu-item.active {
+            background-color: rgba(255,255,255,0.15);
+            border-left: 3px solid white;
+        }
+        
+        .main-content {
+            margin-left: 250px;
+            padding: 30px;
+            min-height: 100vh;
+        }
+        
+        .top-bar {
+            background: white;
+            padding: 15px 30px;
+            margin: -30px -30px 30px -30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.12);
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(135deg, var(--secondary-color) 0%, var(--dark-color) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(67, 97, 238, 0.4);
+        }
+        
+        .table {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .table thead {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+        }
+        
+        .badge-status {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        
+        .badge-active { background-color: var(--success-color); color: white; }
+        .badge-inactive { background-color: var(--danger-color); color: white; }
+        .badge-pending { background-color: var(--warning-color); color: #333; }
+        .badge-running { background-color: var(--dark-color); color: white; }
+        .badge-completed { background-color: var(--success-color); color: white; }
+        .badge-failed { background-color: var(--danger-color); color: white; }
+        
+        .modal-content {
+            border-radius: 12px;
+            border: none;
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            border-radius: 12px 12px 0 0;
+        }
+        
+        .form-control, .form-select {
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+            padding: 10px 15px;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.25);
+        }
+        
+        .progress {
+            height: 8px;
+            border-radius: 4px;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 25px;
+        }
+        
+        .action-btns {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+        }
+        
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 400px;
+        }
+        
+        .login-title {
+            text-align: center;
+            margin-bottom: 30px;
+            color: var(--primary-color);
+        }
+        
+        .hidden { display: none !important; }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+
+    <!-- 登录页面 -->
+    <div class="login-container" v-if="!isLoggedIn">
+        <div class="login-box">
+            <h2 class="login-title"><i class="bi bi-shield-lock"></i> 智能大模型安全评估系统</h2>
+            <form @submit.prevent="login">
+                <div class="mb-3">
+                    <label class="form-label">用户名</label>
+                    <input type="text" class="form-control" v-model="loginForm.username" required placeholder="请输入用户名">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">密码</label>
+                    <input type="password" class="form-control" v-model="loginForm.password" required placeholder="请输入密码">
+                </div>
+                <div class="alert alert-danger" v-if="loginError">
+                    {{ typeof loginError === 'string' ? loginError : '登录失败，请检查账号和密码' }}
+                </div>
+                <button type="submit" class="btn btn-primary w-100">登录</button>
+                <div class="text-center mt-3 text-muted">
+                    <small>默认管理员账号: admin / admin123</small>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 主应用界面 -->
+    <div v-if="isLoggedIn">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <i class="bi bi-shield-check"></i>
+                <h3>安全评估系统</h3>
+            </div>
+            <div class="sidebar-menu">
+                <div class="menu-item" :class="{ active: currentPage === 'dashboard' }" @click="currentPage = 'dashboard'">
+                    <i class="bi bi-speedometer2"></i> 仪表板
+                </div>
+                <div class="menu-item" :class="{ active: currentPage === 'models' }" @click="currentPage = 'models'">
+                    <i class="bi bi-cpu"></i> 大模型管理
+                </div>
+                <div class="menu-item" :class="{ active: currentPage === 'datasets' }" @click="currentPage = 'datasets'">
+                    <i class="bi bi-database"></i> 数据集管理
+                </div>
+                <div class="menu-item" :class="{ active: currentPage === 'rules' }" @click="currentPage = 'rules'" v-if="currentUser.role === 'admin'">
+                    <i class="bi bi-gear"></i> 评估规则
+                </div>
+                <div class="menu-item" :class="{ active: currentPage === 'tasks' }" @click="currentPage = 'tasks'">
+                    <i class="bi bi-play-circle"></i> 评估任务
+                </div>
+                <div class="menu-item" :class="{ active: currentPage === 'users' }" @click="currentPage = 'users'" v-if="currentUser.role === 'admin'">
+                    <i class="bi bi-people"></i> 用户管理
+                </div>
+                <div class="menu-item" @click="logout">
+                    <i class="bi bi-box-arrow-right"></i> 退出登录
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="top-bar">
+                <h5 style="margin: 0;">{{ pageTitle }}</h5>
+                <div class="user-info">
+                    <span>{{ currentUser.username }}</span>
+                    <div class="user-avatar">{{ currentUser.username[0].toUpperCase() }}</div>
+                    <span class="badge bg-secondary">{{ roleText }}</span>
+                </div>
+            </div>
+
+            <!-- 仪表板页面 -->
+            <div v-if="currentPage === 'dashboard'">
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-value">{{ stats.totalModels }}</div>
+                            <div class="stat-label"><i class="bi bi-cpu"></i> 已接入模型</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #06d6a0 0%, #118ab2 100%);">
+                            <div class="stat-value">{{ stats.totalDatasets }}</div>
+                            <div class="stat-label"><i class="bi bi-database"></i> 数据集总数</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #ffd166 0%, #ef476f 100%);">
+                            <div class="stat-value">{{ stats.completedTasks }}</div>
+                            <div class="stat-label"><i class="bi bi-check-circle"></i> 已完成任务</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card" style="background: linear-gradient(135deg, #ef476f 0%, #b5179e 100%);">
+                            <div class="stat-value">{{ stats.runningTasks }}</div>
+                            <div class="stat-label"><i class="bi bi-arrow-repeat"></i> 运行中任务</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card p-4">
+                            <h5><i class="bi bi-clock-history"></i> 最近活动</h5>
+                            <ul class="list-group list-group-flush mt-3">
+                                <li class="list-group-item d-flex justify-content-between align-items-center" 
+                                    v-for="(activity, index) in (stats.recent_activities || [])" :key="index">
+                                    <span>{{ activity.action }} - {{ activity.target_type }}</span>
+                                    <small class="text-muted">{{ formatTime(activity.timestamp) }}</small>
+                                </li>
+                                <li class="list-group-item text-muted text-center" v-if="(!stats.recent_activities || stats.recent_activities.length === 0)">
+                                    暂无活动记录
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card p-4">
+                            <h5><i class="bi bi-lightning"></i> 快速操作</h5>
+                            <div class="d-grid gap-3 mt-3">
+                                <button class="btn btn-outline-primary" @click="showModelModal()">
+                                    <i class="bi bi-plus-circle"></i> 添加新模型
+                                </button>
+                                <button class="btn btn-outline-success" @click="showDatasetUpload()">
+                                    <i class="bi bi-upload"></i> 上传数据集
+                                </button>
+                                <button class="btn btn-outline-warning" @click="currentPage = 'tasks'; showTaskModal()">
+                                    <i class="bi bi-play-fill"></i> 创建评估任务
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 大模型管理页面 -->
+            <div v-if="currentPage === 'models'">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="page-title">大模型管理</h2>
+                    <button class="btn btn-primary" @click="showModelModal()" v-if="currentUser.role === 'admin'"><i class="bi bi-plus-lg"></i> 添加模型</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>名称</th>
+                                        <th>提供商</th>
+                                        <th>类型</th>
+                                        <th>API地址</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="model in models" :key="model.id">
+                                        <td>{{ model.id }}</td>
+                                        <td><strong>{{ model.name }}</strong></td>
+                                        <td>{{ model.provider || '-' }}</td>
+                                        <td>{{ model.model_type || '-' }}</td>
+                                        <td><code>{{ truncateUrl(model.api_url) }}</code></td>
+                                        <td><span class="badge badge-status" :class="'badge-' + model.status">{{ statusText(model.status) }}</span></td>
+                                        <td>
+                                            <div class="action-btns">
+                                                <button class="btn btn-sm btn-outline-info" @click="testModelConnection(model.id)" title="测试连接">
+                                                    <i class="bi bi-plug"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-warning" @click="editModel(model)" title="编辑"
+                                                    v-if="currentUser.role === 'admin' || !model.created_by">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @click="deleteModel(model.id)" title="删除"
+                                                    v-if="(currentUser.role === 'admin' && !model.created_by) || (model.created_by === currentUser.id)">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!models || models.length === 0">
+                                        <td colspan="7" class="text-center text-muted py-4">暂无模型配置</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据集管理页面 -->
+            <div v-if="currentPage === 'datasets'">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="page-title">数据集管理</h2>
+                    <button class="btn btn-primary" @click="showDatasetUpload()"><i class="bi bi-upload"></i> 上传数据集</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>名称</th>
+                                        <th>文件名</th>
+                                        <th>格式</th>
+                                        <th>行数</th>
+                                        <th>列数</th>
+                                        <th>编码</th>
+                                        <th>上传时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="dataset in datasets" :key="dataset.id">
+                                        <td>{{ dataset.id }}</td>
+                                        <td><strong>{{ dataset.name }}</strong></td>
+                                        <td>{{ dataset.file_name || '-' }}</td>
+                                        <td><span class="badge bg-secondary">{{ (dataset.file_type || 'csv').toUpperCase() }}</span></td>
+                                        <td>{{ (dataset.record_count || 0).toLocaleString() }}</td>
+                                        <td>{{ dataset.columns || '-' }}</td>
+                                        <td>{{ dataset.encoding || '-' }}</td>
+                                        <td>{{ formatTime(dataset.created_at) }}</td>
+                                        <td>
+                                            <div class="action-btns">
+                                                <button class="btn btn-sm btn-outline-info" @click="previewDataset(dataset.id)">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @click="deleteDataset(dataset.id)"
+                                                    v-if="currentUser.role === 'admin'">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!datasets || datasets.length === 0">
+                                        <td colspan="9" class="text-center text-muted py-4">暂无数据集</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 评估规则页面 -->
+            <div v-if="currentPage === 'rules' && currentUser.role === 'admin'">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="page-title">评估规则管理</h2>
+                    <button class="btn btn-primary" @click="showRuleModal()"><i class="bi bi-plus-lg"></i> 新建规则</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>规则名称</th>
+                                        <th>关联数据集</th>
+                                        <th>规则类型</th>
+                                        <th>输入字段</th>
+                                        <th>版本</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="rule in rules" :key="rule.id">
+                                        <td>{{ rule.id }}</td>
+                                        <td><strong>{{ rule.name }}</strong></td>
+                                        <td>{{ rule.dataset_name || '-' }}</td>
+                                        <td>{{ rule.rule_type }}</td>
+                                        <td>{{ (rule.input_fields || []).join(', ') }}</td>
+                                        <td>v{{ rule.version }}</td>
+                                        <td>
+                                            <span class="badge badge-status" :class="rule.is_active ? 'badge-active' : 'badge-inactive'">
+                                                {{ rule.is_active ? '启用' : '禁用' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="action-btns">
+                                                <button class="btn btn-sm btn-outline-warning" @click="editRule(rule)">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-info" @click="viewRuleVersions(rule.id)">
+                                                    <i class="bi bi-clock-history"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!rules || rules.length === 0">
+                                        <td colspan="8" class="text-center text-muted py-4">暂无评估规则</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 评估任务页面 -->
+            <div v-if="currentPage === 'tasks'">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="page-title">评估任务</h2>
+                    <button class="btn btn-primary" @click="showTaskModal()"><i class="bi bi-plus-lg"></i> 创建任务</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>任务名称</th>
+                                        <th>被测模型</th>
+                                        <th>数据集</th>
+                                        <th>评估规则</th>
+                                        <th>状态</th>
+                                        <th>进度</th>
+                                        <th>结果</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="task in tasks" :key="task.id">
+                                        <td>{{ task.id }}</td>
+                                        <td><strong>{{ task.name }}</strong></td>
+                                        <td>{{ task.model_name }}</td>
+                                        <td>{{ task.dataset_name }}</td>
+                                        <td>{{ task.rule_name }}</td>
+                                        <td>
+                                            <span class="badge badge-status" :class="'badge-' + task.status">
+                                                {{ taskStatusText(task.status) }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="progress" style="width: 100px;" v-if="task.status === 'running'">
+                                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                                     :style="{width: task.progress + '%'}">
+                                                </div>
+                                            </div>
+                                            <span v-else>-</span>
+                                        </td>
+                                        <td>
+                                            <small v-if="task.status === 'completed'">
+                                                通过: {{ task.passed }} / 失败: {{ task.failed }}
+                                            </small>
+                                            <span v-else>-</span>
+                                        </td>
+                                        <td>
+                                            <div class="action-btns">
+                                                <button class="btn btn-sm btn-outline-info" @click="viewTaskResults(task.id)" 
+                                                        :disabled="task.status !== 'completed'">
+                                                    <i class="bi bi-file-text"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-success" @click="downloadReport(task.id)"
+                                                        :disabled="!task.report">
+                                                    <i class="bi bi-download"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @click="deleteTask(task.id)">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!tasks || tasks.length === 0">
+                                        <td colspan="9" class="text-center text-muted py-4">暂无评估任务</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 用户管理页面（仅管理员） -->
+            <div v-if="currentPage === 'users' && currentUser.role === 'admin'">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="page-title">用户管理</h2>
+                    <button class="btn btn-primary" @click="showUserModal()"><i class="bi bi-person-plus"></i> 创建用户</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>用户名</th>
+                                        <th>邮箱</th>
+                                        <th>角色</th>
+                                        <th>状态</th>
+                                        <th>创建时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="user in users" :key="user.id">
+                                        <td>{{ user.id }}</td>
+                                        <td><strong>{{ user.username }}</strong></td>
+                                        <td>{{ user.email }}</td>
+                                        <td>
+                                            <span class="badge" :class="roleBadgeClass(user.role)">
+                                                {{ roleTextMap[user.role] }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="badge badge-status" :class="user.is_active ? 'badge-active' : 'badge-inactive'">
+                                                {{ user.is_active ? '正常' : '禁用' }}
+                                            </span>
+                                        </td>
+                                        <td>{{ formatTime(user.created_at) }}</td>
+                                        <td>
+                                            <div class="action-btns">
+                                                <button class="btn btn-sm btn-outline-warning" @click="editUser(user)" 
+                                                        :disabled="user.id === currentUser.id">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @click="deleteUser(user.id)"
+                                                        :disabled="user.id === currentUser.id">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!users || users.length === 0">
+                                        <td colspan="7" class="text-center text-muted py-4">暂无用户</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模型编辑模态框 -->
+    <div class="modal fade" id="modelModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">{{ editingModel ? '编辑模型' : '添加新模型' }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form @submit.prevent="saveModel">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">模型名称 *</label>
+                                <input type="text" class="form-control" v-model="modelForm.name" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">提供商</label>
+                                <input type="text" class="form-control" v-model="modelForm.provider" placeholder="如: OpenAI, Anthropic, 本地部署">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">模型类型</label>
+                                <input type="text" class="form-control" v-model="modelForm.model_type" placeholder="如: GPT-4, LLaMA, 文心一言">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">认证方式</label>
+                                <select class="form-select" v-model="modelForm.auth_type">
+                                    <option value="api_key">API密钥</option>
+                                    <option value="oauth2">OAuth 2.0</option>
+                                    <option value="token">访问令牌</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">API端点URL *</label>
+                            <input type="url" class="form-control" v-model="modelForm.api_url" required placeholder="https://api.example.com/v1/chat/completions">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">API密钥/令牌</label>
+                            <input type="password" class="form-control" v-model="modelForm.api_key" placeholder="输入API密钥（将加密存储）">
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">最大Token数</label>
+                                <input type="number" class="form-control" v-model.number="modelForm.max_tokens" min="1">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">温度参数</label>
+                                <input type="number" class="form-control" v-model.number="modelForm.temperature" step="0.1" min="0" max="2">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">超时时间(秒)</label>
+                                <input type="number" class="form-control" v-model.number="modelForm.timeout" min="1">
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模型测试连接模态框 -->
+    <div class="modal fade" id="testModelModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-plug"></i> 模型连接测试</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div v-if="isTestingModel" class="text-center py-4">
+                        <div class="spinner-border text-primary mb-3" role="status"></div>
+                        <p class="mb-2">{{ testModelResult.message }}</p>
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 :style="{width: testModelResult.progress + '%'}"></div>
+                        </div>
+                    </div>
+                    
+                    <div v-else-if="testModelResult.status === 'success'" class="text-center py-3">
+                        <div class="mb-3">
+                            <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+                        </div>
+                        <h4 class="text-success">{{ testModelResult.message }}</h4>
+                        <hr>
+                        <dl class="row text-start mt-3">
+                            <dt class="col-sm-5">响应时间：</dt>
+                            <dd class="col-sm-7"><strong>{{ testModelResult.response_time?.toFixed(2) }} 秒</strong></dd>
+                            <dt class="col-sm-5">测试时间：</dt>
+                            <dd class="col-sm-7">{{ testModelResult.timestamp }}</dd>
+                        </dl>
+                        <div class="alert alert-success mt-3" v-if="testModelResult.model_response">
+                            <strong>模型响应预览：</strong>
+                            <pre class="mb-0 small">{{ testModelResult.model_response }}</pre>
+                        </div>
+                    </div>
+                    
+                    <div v-else-if="testModelResult.status === 'error'" class="text-center py-3">
+                        <div class="mb-3">
+                            <i class="bi bi-x-circle-fill text-danger" style="font-size: 4rem;"></i>
+                        </div>
+                        <h4 class="text-danger">{{ testModelResult.message }}</h4>
+                        <hr>
+                        <p class="text-danger">{{ testModelResult.error }}</p>
+                        <small class="text-muted">测试时间：{{ testModelResult.timestamp }}</small>
+                    </div>
+                    
+                    <div v-else class="text-center py-4 text-muted">
+                        <i class="bi bi-plug" style="font-size: 3rem;"></i>
+                        <p class="mt-2">点击"开始测试"按钮开始连接测试</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    <button type="button" class="btn btn-primary" @click="closeTestModal()" 
+                            v-if="!isTestingModel && testModelResult.status">
+                        <i class="bi bi-arrow-repeat"></i> 重新测试
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数据集上传模态框 -->
+    <div class="modal fade" id="datasetModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">上传数据集</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form @submit.prevent="uploadDataset">
+                        <div class="mb-3">
+                            <label class="form-label">数据集名称 *</label>
+                            <input type="text" class="form-control" v-model="datasetForm.name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">选择文件 * (支持 CSV, JSON, Excel, TXT)</label>
+                            <input type="file" class="form-control" @change="handleFileSelect" accept=".csv,.json,.xlsx,.xls,.txt" required>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" v-model="datasetForm.has_header" id="hasHeader">
+                            <label class="form-check-label" for="hasHeader">文件包含表头</label>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> 系统会自动检测文件编码并解析数据结构
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">取消</button>
+                            <button type="submit" class="btn btn-primary">上传</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 规则编辑模态框 -->
+    <div class="modal fade" id="ruleModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">{{ editingRule ? '编辑评估规则' : '新建评估规则' }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form @submit.prevent="saveRule">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">规则名称 *</label>
+                                <input type="text" class="form-control" v-model="ruleForm.name" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">关联数据集 *</label>
+                                <select class="form-select" v-model="ruleForm.dataset_id" @change="loadDatasetFields" required>
+                                    <option value="">请选择数据集</option>
+                                    <option v-for="ds in datasets" :key="ds.id" :value="ds.id">{{ ds.name }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- 数据集字段选择区域 -->
+                        <div class="mb-3" v-if="datasetFields.length > 0">
+                            <label class="form-label">
+                                <i class="bi bi-database"></i> 数据集字段（点击添加到输入字段）
+                            </label>
+                            <div class="card bg-light">
+                                <div class="card-body py-2">
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <span v-for="(field, index) in datasetFields" :key="index"
+                                              class="badge bg-primary text-decoration-none"
+                                              style="cursor: pointer; font-size: 0.9rem;"
+                                              @click="addFieldToInput(field.name)"
+                                              :title="`类型: ${field.type} | 添加到输入字段`">
+                                            <i class="bi bi-plus-circle me-1"></i>{{ field.name }}
+                                            <small class="text-muted ms-1">({{ field.type }})</small>
+                                        </span>
+                                    </div>
+                                    <small class="text-muted mt-2 d-block">
+                                        <i class="bi bi-info-circle"></i> 
+                                        点击上方字段标签可自动添加到输入字段列表中
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">规则类型</label>
+                            <select class="form-select" v-model="ruleForm.rule_type">
+                                <option value="safety">安全性评估</option>
+                                <option value="compliance">合规性检查</option>
+                                <option value="quality">质量评估</option>
+                                <option value="custom">自定义规则</option>
+                            </select>
+                        </div>
+                        
+                        <!-- 输入字段区域（支持自动换行） -->
+                        <div class="mb-3">
+                            <label class="form-label">输入字段（用于构建提示词）*</label>
+                            <div class="input-group">
+                                <textarea class="form-control" v-model="ruleForm.inputFieldsText" rows="4" 
+                                          placeholder="每行一个字段名，或点击上方数据集字段自动添加"
+                                          style="white-space: pre-wrap; word-wrap: break-word;"></textarea>
+                                <button type="button" class="btn btn-outline-secondary" 
+                                        title="清空输入字段"
+                                        @click="ruleForm.inputFieldsText = ''">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                            <div class="form-text text-muted">
+                                已添加 {{ ruleForm.inputFieldsText.split('\n').filter(f => f.trim()).length }} 个字段
+                            </div>
+                        </div>
+                        
+                        <!-- 额外输入区域1：输出格式要求 -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                输出格式要求
+                                <span class="badge bg-secondary ms-2">可选</span>
+                            </label>
+                            <textarea class="form-control" v-model="ruleForm.output_format" rows="2" 
+                                      placeholder="定义期望的输出格式，如：JSON、文本等"></textarea>
+                        </div>
+                        
+                        <!-- 额外输入区域2：评估标准说明 -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                评估标准说明
+                                <span class="badge bg-secondary ms-2">可选</span>
+                            </label>
+                            <textarea class="form-control" v-model="ruleForm.evaluation_criteria" rows="3" 
+                                      placeholder="详细描述评估标准和判断依据"></textarea>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">期望输出字段</label>
+                                <input type="text" class="form-control" v-model="ruleForm.expected_field" 
+                                       placeholder="如有标准答案可指定">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">通过条件</label>
+                                <input type="text" class="form-control" v-model="ruleForm.pass_condition" 
+                                       placeholder="定义通过条件">
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">取消</button>
+                            <button type="submit" class="btn btn-primary">保存规则</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 任务创建模态框 -->
+    <div class="modal fade" id="taskModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">创建评估任务</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form @submit.prevent="createTask">
+                        <div class="mb-3">
+                            <label class="form-label">任务名称 *</label>
+                            <input type="text" class="form-control" v-model="taskForm.name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">选择被评估模型 *</label>
+                            <select class="form-select" v-model="taskForm.model_id" required>
+                                <option value="">请选择模型</option>
+                                <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }}</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">选择数据集 *</label>
+                            <select class="form-select" v-model="taskForm.dataset_id" @change="autoBindRules" required>
+                                <option value="">请选择数据集</option>
+                                <option v-for="ds in datasets" :key="ds.id" :value="ds.id">{{ ds.name }}</option>
+                            </select>
+                        </div>
+                        
+                        <!-- 自动绑定的评估规则区域 -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                关联的评估规则
+                                <span class="badge bg-success ms-2">自动绑定</span>
+                            </label>
+                            
+                            <div v-if="taskForm.dataset_id && boundRules.length > 0" class="card border-success">
+                                <div class="card-header py-2">
+                                    <small class="text-success mb-0">
+                                        <i class="bi bi-link-45deg"></i> 
+                                        已找到 {{ boundRules.length }} 条与该数据集关联的规则
+                                    </small>
+                                </div>
+                                <ul class="list-group list-group-flush">
+                                    <li class="list-group-item d-flex justify-content-between align-items-center py-2"
+                                        v-for="rule in boundRules" :key="rule.id">
+                                        <div>
+                                            <strong>{{ rule.name }}</strong>
+                                            <br><small class="text-muted">{{ rule.rule_type }} | v{{ rule.version }}</small>
+                                        </div>
+                                        <span class="badge bg-primary">{{ rule.status || 'active' }}</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            
+                            <div v-else-if="taskForm.dataset_id && boundRules.length === 0" class="alert alert-warning">
+                                <i class="bi bi-exclamation-circle"></i> 
+                                该数据集暂无关联的评估规则，请先在"评估规则"中创建与该数据集关联的规则
+                            </div>
+                            
+                            <div v-else class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> 
+                                请先选择数据集，系统将自动查找并绑定已关联的评估规则
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i> 任务创建后将自动加入评估队列执行
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">取消</button>
+                            <button type="submit" class="btn btn-primary" 
+                                    :disabled="!taskForm.dataset_id || boundRules.length === 0"
+                                    title="需要先选择数据集且该数据集有关联的规则">
+                                创建并执行
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用户编辑模态框 -->
+    <div class="modal fade" id="userModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">{{ editingUser ? '编辑用户' : '创建新用户' }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form @submit.prevent="saveUser">
+                        <div class="mb-3">
+                            <label class="form-label">用户名 *</label>
+                            <input type="text" class="form-control" v-model="userForm.username" required 
+                                   :disabled="editingUser">
+                        </div>
+                        <div class="mb-3" v-if="!editingUser">
+                            <label class="form-label">密码 *</label>
+                            <input type="password" class="form-control" v-model="userForm.password" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">邮箱</label>
+                            <input type="email" class="form-control" v-model="userForm.email">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">角色 *</label>
+                            <select class="form-select" v-model="userForm.role" required>
+                                <option value="user">普通用户</option>
+                                <option value="auditor">审计员</option>
+                                <option value="admin">系统管理员</option>
+                            </select>
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 结果查看模态框 -->
+    <div class="modal fade" id="resultsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">评估结果详情</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3 d-flex justify-content-between align-items-center">
+                        <span>共 {{ taskResults.total }} 条记录</span>
+                        <div>
+                            <button class="btn btn-sm btn-outline-success" @click="downloadReport(currentViewingTaskId)">
+                                <i class="bi bi-download"></i> 下载完整报告
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>输入数据</th>
+                                    <th>模型输出</th>
+                                    <th>评估结果</th>
+                                    <th>分数</th>
+                                    <th>风险等级</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="result in taskResults.results" :key="result.id">
+                                    <td>{{ result.case_index + 1 }}</td>
+                                    <td><pre class="mb-0" style="font-size: 12px;">{{ JSON.stringify(result.input_data, null, 2) }}</pre></td>
+                                    <td><pre class="mb-0" style="max-height: 150px; overflow-y: auto; font-size: 11px;">{{ result.model_output }}</pre></td>
+                                    <td>
+                                        <span class="badge" :class="resultBadgeClass(result.result)">
+                                            {{ resultResultText(result.result) }}
+                                        </span>
+                                    </td>
+                                    <td>{{ result.score !== null ? result.score.toFixed(1) : '-' }}</td>
+                                    <td>
+                                        <span class="badge" :class="riskBadgeClass(result.risk_level)">
+                                            {{ riskLevelText(result.risk_level) }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <nav v-if="taskResults.totalPages > 1">
+                        <ul class="pagination pagination-sm justify-content-center">
+                            <li class="page-item" :class="{ disabled: taskResults.currentPage <= 1 }">
+                                <a class="page-link" @click="changeResultsPage(-1)">上一页</a>
+                            </li>
+                            <li class="page-item active"><span class="page-link">{{ taskResults.currentPage }}</span></li>
+                            <li class="page-item" :class="{ disabled: taskResults.currentPage >= taskResults.totalPages }">
+                                <a class="page-link" @click="changeResultsPage(1)">下一页</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jose/4.14.4/browser/index.umd.min.js"></script>
+
+<script>
+const { createApp, ref, computed, onMounted, watch } = Vue;
+
+const app = createApp({
+    setup() {
+        // 状态变量
+        const isLoggedIn = ref(false);
+        const currentPage = ref('dashboard');
+        const currentUser = ref({});
+        const token = ref('');
+        
+        const loginForm = ref({ username: '', password: '' });
+        const loginError = ref('');
+        
+        // 数据列表
+        const models = ref([]);
+        const datasets = ref([]);
+        const rules = ref([]);
+        const tasks = ref([]);
+        const users = ref([]);
+        const stats = ref({
+            totalModels: 0,
+            activeModels: 0,
+            totalDatasets: 0,
+            completedTasks: 0,
+            runningTasks: 0,
+            recentActivities: []
+        });
+        
+        // 表单数据
+        const editingModel = ref(null);
+        const modelForm = ref({
+            name: '', provider: '', model_type: '', api_url: '',
+            api_key: '', auth_type: 'api_key',
+            max_tokens: 2048, temperature: 0.7, timeout: 30
+        });
+        
+        const datasetForm = ref({ name: '', has_header: true, file: null });
+        const selectedFile = ref(null);
+        
+        const editingRule = ref(null);
+        const ruleForm = ref({
+            name: '', dataset_id: '', rule_type: 'safety',
+            inputFieldsText: '', expected_field: '', pass_condition: ''
+        });
+        
+        const taskForm = ref({ name: '', model_id: '', dataset_id: '', rule_id: '' });
+        
+        const editingUser = ref(null);
+        const userForm = ref({ username: '', password: '', email: '', role: 'user' });
+        
+        const taskResults = ref({ total: 0, totalPages: 0, currentPage: 1, results: [] });
+        const currentViewingTaskId = ref(null);
+        
+        // 计算属性
+        const pageTitle = computed(() => {
+            const titles = {
+                dashboard: '系统仪表板',
+                models: '大模型管理',
+                datasets: '数据集管理',
+                rules: '评估规则管理',
+                tasks: '评估任务',
+                users: '用户管理'
+            };
+            return titles[currentPage.value] || '仪表板';
+        });
+        
+        const roleText = computed(() => {
+            const roles = { admin: '管理员', auditor: '审计员', user: '用户' };
+            return roles[currentUser.value.role] || '未知';
+        });
+        
+        const roleTextMap = { admin: '管理员', auditor: '审计员', user: '用户' };
+        
+        // API请求封装
+        async function apiRequest(method, url, data = null, isFormData = false) {
+            const options = {
+                method,
+                headers: {},
+                credentials: 'include' // 包含凭证，处理跨域Cookie
+            };
+            
+            if (token.value) {
+                options.headers['Authorization'] = `Bearer ${token.value}`;
+            }
+            
+            if (data) {
+                if (isFormData) {
+                    // 直接使用传入的FormData对象，不要设置Content-Type，让浏览器自动设置
+                    options.body = data;
+                    // 移除可能存在的Content-Type头，让FormData自动处理
+                    delete options.headers['Content-Type'];
+                } else {
+                    options.headers['Content-Type'] = 'application/json';
+                    options.body = JSON.stringify(data);
+                }
+            }
+            
+            try {
+                console.log('发送API请求:', method, `http://localhost:8000${url}`);
+                const response = await fetch(`http://localhost:8000${url}`, options);
+                console.log('API响应状态:', response.status);
+                
+                if (response.status === 401) {
+                    // 检查是否是登录接口的401错误
+                    if (url === '/api/auth/login') {
+                        // 登录接口的401错误，应该是用户名或密码错误，不执行logout
+                        // 继续处理错误信息
+                    } else {
+                        // 其他接口的401错误，执行logout
+                        logout();
+                        throw new Error('登录已过期，请重新登录');
+                    }
+                }
+                
+                if (!response.ok) {
+                    // 尝试解析错误信息
+                    let errorMessage = `请求失败 (${response.status})`;
+                    try {
+                        const error = await response.json();
+                        console.log('API错误响应:', error);
+                        if (error.detail) {
+                            errorMessage = error.detail;
+                        } else if (error.error) {
+                            errorMessage = error.error;
+                        }
+                    } catch (e) {
+                        // 如果不是JSON格式，尝试获取文本内容
+                        try {
+                            const text = await response.text();
+                            if (text) {
+                                errorMessage = text;
+                            }
+                        } catch (e2) {
+                            // 忽略错误
+                        }
+                    }
+                    throw new Error(errorMessage);
+                }
+                
+                const result = await response.json();
+                console.log('API响应数据:', result);
+                return result;
+            } catch (error) {
+                console.error('API Error:', error);
+                // 确保抛出的是字符串错误信息
+                if (typeof error === 'object' && error !== null) {
+                    if (error.message) {
+                        throw new Error(error.message);
+                    } else {
+                        throw new Error('网络请求失败，请检查网络连接');
+                    }
+                } else {
+                    throw new Error(String(error));
+                }
+            }
+        }
+        
+        // 登录
+        async function login() {
+            try {
+                loginError.value = '';
+                console.log('开始登录，用户名:', loginForm.value.username);
+                // 使用表单格式发送登录请求，与后端API保持一致
+                const formData = new FormData();
+                formData.append('username', loginForm.value.username);
+                formData.append('password', loginForm.value.password);
+                
+                const result = await apiRequest('POST', '/api/auth/login', formData, true);
+                console.log('登录成功，响应数据:', result);
+                
+                // 确保响应数据格式正确
+                if (!result.access_token || !result.username || !result.role) {
+                    throw new Error('登录响应格式错误');
+                }
+                
+                token.value = result.access_token;
+                currentUser.value = { username: result.username, role: result.role };
+                console.log('设置登录状态前:', isLoggedIn.value);
+                isLoggedIn.value = true;
+                console.log('设置登录状态后:', isLoggedIn.value);
+                
+                localStorage.setItem('token', token.value);
+                localStorage.setItem('user', JSON.stringify(currentUser.value));
+                console.log('本地存储已更新');
+                
+                // 强制刷新页面，确保Vue响应式系统正确更新
+                setTimeout(() => {
+                    console.log('加载仪表板数据');
+                    loadDashboardData();
+                }, 100);
+            } catch (error) {
+                console.error('登录失败:', error);
+                // 确保错误信息是字符串
+                loginError.value = typeof error.message === 'string' ? error.message : '登录失败，请检查账号和密码';
+            }
+        }
+        
+        function logout() {
+            token.value = '';
+            currentUser.value = {};
+            isLoggedIn.value = false;
+            currentPage.value = 'dashboard';
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('currentPage');
+        }
+        
+        // 加载仪表板数据
+        async function loadDashboardData() {
+            try {
+                stats.value = await apiRequest('GET', '/api/stats/dashboard');
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+            }
+        }
+        
+        // 加载各模块数据
+        async function loadModels() {
+            try {
+                models.value = await apiRequest('GET', '/api/models');
+            } catch (error) {
+                console.error('加载模型列表失败:', error);
+                models.value = [];
+            }
+        }
+        
+        async function loadDatasets() {
+            try {
+                datasets.value = await apiRequest('GET', '/api/datasets');
+            } catch (error) {
+                console.error('加载数据集列表失败:', error);
+                datasets.value = [];
+            }
+        }
+        
+        async function loadRules() {
+            try {
+                rules.value = await apiRequest('GET', '/api/rules');
+            } catch (error) {
+                console.error('加载评估规则失败:', error);
+                rules.value = [];
+            }
+        }
+        
+        async function loadTasks() {
+            try {
+                tasks.value = await apiRequest('GET', '/api/tasks');
+            } catch (error) {
+                console.error('加载任务列表失败:', error);
+                tasks.value = [];
+            }
+        }
+        
+        async function loadUsers() {
+            users.value = await apiRequest('GET', '/api/users');
+        }
+        
+        // 监听页面切换加载数据
+        watch(currentPage, (newPage) => {
+            localStorage.setItem('currentPage', newPage);
+            switch(newPage) {
+                case 'dashboard': loadDashboardData(); break;
+                case 'models': loadModels(); break;
+                case 'datasets': loadDatasets(); break;
+                case 'rules': loadRules(); break;
+                case 'tasks': loadTasks(); break;
+                case 'users': loadUsers(); break;
+            }
+        });
+        
+        // 模型相关方法
+        function showModelModal(model = null) {
+            editingModel.value = model;
+            if (model) {
+                modelForm.value = { ...model };
+            } else {
+                modelForm.value = {
+                    name: '', provider: '', model_type: '', api_url: '',
+                    api_key: '', auth_type: 'api_key',
+                    max_tokens: 2048, temperature: 0.7, timeout: 30
+                };
+            }
+            new bootstrap.Modal(document.getElementById('modelModal')).show();
+        }
+        
+        async function saveModel() {
+            try {
+                if (editingModel.value) {
+                    await apiRequest('PUT', `/api/models/${editingModel.value.id}`, modelForm.value);
+                } else {
+                    await apiRequest('POST', '/api/models', modelForm.value);
+                }
+                bootstrap.Modal.getInstance(document.getElementById('modelModal')).hide();
+                loadModels();
+                loadDashboardData();
+            } catch (error) {
+                alert('保存失败: ' + error.message);
+            }
+        }
+        
+        function editModel(model) {
+            showModelModal(model);
+        }
+        
+        async function deleteModel(id) {
+            if (!confirm('确定要删除此模型吗？')) return;
+            try {
+                await apiRequest('DELETE', `/api/models/${id}`);
+                loadModels();
+                loadDashboardData();
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+        
+        const testModelResult = ref({});
+        const isTestingModel = ref(false);
+        
+        async function testModelConnection(id) {
+            isTestingModel.value = true;
+            testModelResult.value = { status: 'testing', message: '正在测试连接...', progress: 0 };
+            
+            new bootstrap.Modal(document.getElementById('testModelModal')).show();
+            
+            try {
+                testModelResult.value = { status: 'testing', message: '发送测试请求...', progress: 20 };
+                
+                const result = await apiRequest('POST', `/api/models/${id}/test`);
+                
+                if (result.success) {
+                    testModelResult.value = {
+                        status: 'success',
+                        message: '连接成功！',
+                        progress: 100,
+                        response_time: result.response_time,
+                        model_response: result.model_response?.substring(0, 200) || '无响应内容',
+                        timestamp: new Date().toLocaleString()
+                    };
+                } else {
+                    testModelResult.value = {
+                        status: 'error',
+                        message: '连接失败',
+                        progress: 100,
+                        error: result.error,
+                        timestamp: new Date().toLocaleString()
+                    };
+                }
+            } catch (error) {
+                testModelResult.value = {
+                    status: 'error',
+                    message: '测试异常',
+                    progress: 100,
+                    error: error.message,
+                    timestamp: new Date().toLocaleString()
+                };
+            } finally {
+                isTestingModel.value = false;
+            }
+        }
+        
+        function closeTestModal() {
+            bootstrap.Modal.getInstance(document.getElementById('testModelModal')).hide();
+        }
+        
+        function canDeleteModel(model) {
+            return currentUser.value.role === 'admin' || model.owner_id === currentUser.value.id;
+        }
+        
+        // 数据集相关方法
+        function showDatasetUpload() {
+            datasetForm.value = { name: '', has_header: true };
+            selectedFile.value = null;
+            new bootstrap.Modal(document.getElementById('datasetModal')).show();
+        }
+        
+        function handleFileSelect(event) {
+            selectedFile.value = event.target.files[0];
+            if (selectedFile.value && !datasetForm.value.name) {
+                datasetForm.value.name = selectedFile.value.name.replace(/\.[^/.]+$/, '');
+            }
+        }
+        
+        async function uploadDataset() {
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile.value);
+                formData.append('name', datasetForm.value.name);
+                formData.append('has_header', datasetForm.value.has_header);
+                
+                const result = await apiRequest('POST', '/api/datasets/upload', formData, true);
+                bootstrap.Modal.getInstance(document.getElementById('datasetModal')).hide();
+                alert(`数据集上传成功！共 ${result.rows} 行，${result.columns.length} 列`);
+                loadDatasets();
+                loadDashboardData();
+            } catch (error) {
+                alert('上传失败: ' + error.message);
+            }
+        }
+        
+        async function previewDataset(id) {
+            alert('数据预览功能开发中...');
+        }
+        
+        async function deleteDataset(id) {
+            if (!confirm('确定要删除此数据集吗？')) return;
+            try {
+                await apiRequest('DELETE', `/api/datasets/${id}`);
+                loadDatasets();
+                loadDashboardData();
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+        
+        // 规则相关方法
+        function showRuleModal(rule = null) {
+            editingRule.value = rule;
+            if (rule) {
+                ruleForm.value = {
+                    name: rule.name,
+                    dataset_id: rule.dataset_id,
+                    rule_type: rule.rule_type,
+                    inputFieldsText: rule.input_fields.join('\n'),
+                    expected_field: rule.expected_field || '',
+                    pass_condition: rule.pass_condition || '',
+                    output_format: rule.output_format || '',
+                    evaluation_criteria: rule.evaluation_criteria || ''
+                };
+                if (rule.dataset_id) {
+                    loadDatasetFields();
+                }
+            } else {
+                ruleForm.value = {
+                    name: '', dataset_id: '', rule_type: 'safety',
+                    inputFieldsText: '', expected_field: '', pass_condition: '',
+                    output_format: '', evaluation_criteria: ''
+                };
+                datasetFields.value = [];
+            }
+            new bootstrap.Modal(document.getElementById('ruleModal')).show();
+        }
+        
+        const datasetFields = ref([]);
+        
+        async function loadDatasetFields() {
+            if (!ruleForm.value.dataset_id) {
+                datasetFields.value = [];
+                return;
+            }
+            
+            try {
+                const result = await apiRequest('GET', `/api/datasets/${ruleForm.value.dataset_id}/data`);
+                
+                if (result.columns && result.data && result.data.length > 0) {
+                    const firstRow = result.data[0];
+                    datasetFields.value = result.columns.map(col => ({
+                        name: col,
+                        type: typeof firstRow[col] === 'number' ? '数值' : 
+                             typeof firstRow[col] === 'boolean' ? '布尔' : '文本'
+                    }));
+                    
+                    console.log(`加载到 ${datasetFields.value.length} 个字段:`, datasetFields.value);
+                } else {
+                    datasetFields.value = [];
+                }
+            } catch (error) {
+                console.error('加载数据集字段失败:', error);
+                datasetFields.value = [];
+            }
+        }
+        
+        function addFieldToInput(fieldName) {
+            if (!fieldName || !fieldName.trim()) return;
+            
+            const currentFields = ruleForm.value.inputFieldsText
+                .split('\n')
+                .map(f => f.trim())
+                .filter(f => f);
+            
+            if (currentFields.includes(fieldName)) {
+                alert(`字段 "${fieldName}" 已存在于输入列表中`);
+                return;
+            }
+            
+            if (currentFields.length === 0) {
+                ruleForm.value.inputFieldsText = fieldName;
+            } else {
+                ruleForm.value.inputFieldsText += '\n' + fieldName;
+            }
+        }
+        
+        async function saveRule() {
+            try {
+                const payload = {
+                    name: ruleForm.value.name,
+                    dataset_id: parseInt(ruleForm.value.dataset_id),
+                    rule_type: ruleForm.value.rule_type,
+                    input_fields: ruleForm.value.inputFieldsText.split('\n').filter(f => f.trim()),
+                    expected_field: ruleForm.value.expected_field || null,
+                    pass_condition: ruleForm.value.pass_condition,
+                    risk_levels: { high: '高风险', medium: '中风险', low: '低风险' }
+                };
+                
+                if (editingRule.value) {
+                    await apiRequest('PUT', `/api/rules/${editingRule.value.id}`, payload);
+                } else {
+                    await apiRequest('POST', '/api/rules', payload);
+                }
+                bootstrap.Modal.getInstance(document.getElementById('ruleModal')).hide();
+                loadRules();
+            } catch (error) {
+                alert('保存失败: ' + error.message);
+            }
+        }
+        
+        function editRule(rule) {
+            showRuleModal(rule);
+        }
+        
+        async function viewRuleVersions(id) {
+            alert('版本历史功能开发中...');
+        }
+        
+        // 任务相关方法
+        const boundRules = ref([]);
+        
+        function showTaskModal() {
+            taskForm.value = { name: '', model_id: '', dataset_id: '', rule_id: '' };
+            boundRules.value = [];
+            new bootstrap.Modal(document.getElementById('taskModal')).show();
+        }
+        
+        async function autoBindRules() {
+            if (!taskForm.value.dataset_id) {
+                boundRules.value = [];
+                return;
+            }
+            
+            boundRules.value = rules.value.filter(rule => 
+                rule.dataset_id === parseInt(taskForm.value.dataset_id)
+            );
+            
+            console.log(`自动绑定: 找到 ${boundRules.value.length} 条关联规则`);
+            
+            if (boundRules.value.length > 0) {
+                taskForm.value.rule_id = boundRules.value[0].id;
+            } else {
+                taskForm.value.rule_id = '';
+            }
+        }
+        
+        async function createTask() {
+            try {
+                if (!taskForm.value.rule_id && boundRules.value.length > 0) {
+                    taskForm.value.rule_id = boundRules.value[0].id;
+                }
+                
+                const result = await apiRequest('POST', '/api/tasks', {
+                    name: taskForm.value.name,
+                    model_id: parseInt(taskForm.value.model_id),
+                    dataset_id: parseInt(taskForm.value.dataset_id),
+                    rule_id: parseInt(taskForm.value.rule_id)
+                });
+                bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();
+                alert('评估任务已创建并加入队列！');
+                loadTasks();
+                loadDashboardData();
+            } catch (error) {
+                alert('创建失败: ' + error.message);
+            }
+        }
+        
+        async function viewTaskResults(id) {
+            currentViewingTaskId.value = id;
+            taskResults.value = await apiRequest('GET', `/api/tasks/${id}/results`);
+            new bootstrap.Modal(document.getElementById('resultsModal')).show();
+        }
+        
+        async function changeResultsPage(delta) {
+            const newPage = taskResults.value.currentPage + delta;
+            taskResults.value = await apiRequest('GET', `/api/tasks/${currentViewingTaskId.value}/results?page=${newPage}`);
+        }
+        
+        async function downloadReport(id) {
+            window.open(`http://localhost:8000/api/tasks/${id}/download?token=${token.value}`, '_blank');
+        }
+        
+        async function deleteTask(id) {
+            if (!confirm('确定要删除此任务吗？')) return;
+            try {
+                await apiRequest('DELETE', `/api/tasks/${id}`);
+                loadTasks();
+                loadDashboardData();
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+        
+        // 用户相关方法
+        function showUserModal(user = null) {
+            editingUser.value = user;
+            if (user) {
+                userForm.value = { username: user.username, email: user.email, role: user.role };
+            } else {
+                userForm.value = { username: '', password: '', email: '', role: 'user' };
+            }
+            new bootstrap.Modal(document.getElementById('userModal')).show();
+        }
+        
+        async function saveUser() {
+            try {
+                if (editingUser.value) {
+                    await apiRequest('PUT', `/api/users/${editingUser.value.id}`, userForm.value);
+                } else {
+                    await apiRequest('POST', '/api/users', userForm.value);
+                }
+                bootstrap.Modal.getInstance(document.getElementById('userModal')).hide();
+                loadUsers();
+            } catch (error) {
+                alert('保存失败: ' + error.message);
+            }
+        }
+        
+        function editUser(user) {
+            showUserModal(user);
+        }
+        
+        async function deleteUser(id) {
+            if (!confirm('确定要删除此用户吗？')) return;
+            try {
+                await apiRequest('DELETE', `/api/users/${id}`);
+                loadUsers();
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+        
+        // 工具函数
+        function truncateUrl(url) {
+            if (!url) return '-';
+            return url.length > 40 ? url.substring(0, 37) + '...' : url;
+        }
+        
+        function formatTime(timeStr) {
+            if (!timeStr) return '-';
+            const date = new Date(timeStr);
+            return date.toLocaleString('zh-CN');
+        }
+        
+        function statusText(status) {
+            const map = { active: '运行中', inactive: '已停用' };
+            return map[status] || status;
+        }
+        
+        function taskStatusText(status) {
+            const map = { pending: '等待中', running: '运行中', completed: '已完成', failed: '失败' };
+            return map[status] || status;
+        }
+        
+        function roleBadgeClass(role) {
+            const map = { admin: 'bg-danger', auditor: 'bg-warning', user: 'bg-primary' };
+            return map[role] || 'bg-secondary';
+        }
+        
+        function resultBadgeClass(result) {
+            const map = { passed: 'bg-success', failed: 'bg-danger', partial: 'bg-warning', error: 'bg-dark' };
+            return map[result] || 'bg-secondary';
+        }
+        
+        function resultResultText(result) {
+            const map = { passed: '通过', failed: '未通过', partial: '部分通过', error: '异常' };
+            return map[result] || result;
+        }
+        
+        function riskBadgeClass(level) {
+            const map = { high: 'bg-danger', medium: 'bg-warning', low: 'bg-success' };
+            return map[level] || 'bg-secondary';
+        }
+        
+        function riskLevelText(level) {
+            const map = { high: '高风险', medium: '中风险', low: '低风险' };
+            return map[level] || level || '-';
+        }
+        
+        // 初始化
+        onMounted(async () => {
+            const savedToken = localStorage.getItem('token');
+            const savedUser = localStorage.getItem('user');
+            const savedPage = localStorage.getItem('currentPage');
+            
+            if (savedToken && savedUser) {
+                try {
+                    token.value = savedToken;
+                    currentUser.value = JSON.parse(savedUser);
+                    await loadDashboardData();
+                    
+                    isLoggedIn.value = true;
+                    
+                    if (savedPage) {
+                        currentPage.value = savedPage;
+                    }
+                } catch (error) {
+                    console.error('验证登录状态失败:', error);
+                    token.value = '';
+                    currentUser.value = {};
+                    isLoggedIn.value = false;
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    localStorage.removeItem('currentPage');
+                    loginError.value = '';
+                }
+            }
+        });
+        
+        return {
+            // 状态
+            isLoggedIn, currentPage, currentUser, token,
+            loginForm, loginError,
+            models, datasets, rules, tasks, users, stats,
+            editingModel, modelForm,
+            datasetForm, selectedFile,
+            editingRule, ruleForm, datasetFields,
+            taskForm, boundRules,
+            editingUser, userForm,
+            taskResults, currentViewingTaskId,
+            testModelResult, isTestingModel,
+            
+            // 计算属性
+            pageTitle, roleText, roleTextMap,
+            
+            // 方法
+            login, logout,
+            loadModels, loadDatasets, loadRules, loadTasks, loadUsers,
+            showModelModal, saveModel, editModel, deleteModel, testModelConnection, canDeleteModel, closeTestModal,
+            showDatasetUpload, handleFileSelect, uploadDataset, previewDataset, deleteDataset,
+            showRuleModal, saveRule, editRule, viewRuleVersions, loadDatasetFields, addFieldToInput,
+            showTaskModal, createTask, autoBindRules, viewTaskResults, changeResultsPage, downloadReport, deleteTask,
+            showUserModal, saveUser, editUser, deleteUser,
+            truncateUrl, formatTime, statusText, taskStatusText,
+            roleBadgeClass, resultBadgeClass, resultResultText, riskBadgeClass, riskLevelText
+        };
+    }
+});
+
+app.mount('#app');
+
+// 定期刷新运行中的任务状态
+setInterval(async () => {
+    const appInstance = document.querySelector('#app').__vue_app__;
+    if (appInstance && appInstance._instance && appInstance._instance.data && appInstance._instance.data.isLoggedIn) {
+        // 可以在这里添加定时刷新逻辑
+    }
+}, 5000);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,85 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+venv_eval/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database files
+*.db
+*.sqlite3
+*.db-journal
+
+# Uploaded files
+uploads/*
+!uploads/.gitkeep
+
+# Dataset files (large)
+datasets/*.csv
+datasets/*.xlsx
+datasets/*.xls
+datasets/*.json
+!datasets/.gitkeep
+
+# Test results and logs
+*.log
+test_*.py
+check_syntax.py
+find_unterminated.py
+verify_test_users.py
+
+# OS generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Sensitive data (if any)
+*.pem
+*.key
+.env
+.env.local
+
+# Node modules (if any frontend build tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
