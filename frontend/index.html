@@ -249,8 +249,16 @@
 
 <div id="app">
 
+    <!-- Loading界面 -->
+    <div v-if="isLoading" style="display: flex; justify-content: center; align-items: center; height: 100vh; background: #1a1a2e;">
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 text-white">加载中...</p>
+        </div>
+    </div>
+
     <!-- 登录页面 -->
-    <div class="login-container" v-if="!isLoggedIn">
+    <div class="login-container" v-if="!isLoading && !isLoggedIn">
         <div class="login-box">
             <h2 class="login-title"><i class="bi bi-shield-lock"></i> 智能大模型安全评估系统</h2>
             <form @submit.prevent="login">
@@ -274,7 +282,7 @@
     </div>
 
     <!-- 主应用界面 -->
-    <div v-if="isLoggedIn">
+    <div v-if="!isLoading && isLoggedIn">
         <!-- 侧边栏 -->
         <div class="sidebar">
             <div class="sidebar-header">
@@ -285,8 +293,11 @@
                 <div class="menu-item" :class="{ active: currentPage === 'dashboard' }" @click="currentPage = 'dashboard'">
                     <i class="bi bi-speedometer2"></i> 仪表板
                 </div>
-                <div class="menu-item" :class="{ active: currentPage === 'models' }" @click="currentPage = 'models'">
-                    <i class="bi bi-cpu"></i> 大模型管理
+                <div class="menu-item" :class="{ active: currentPage === 'system_llms' }" @click="currentPage = 'system_llms'">
+                    <i class="bi bi-gear"></i> 系统LLM
+                </div>
+                <div class="menu-item" :class="{ active: currentPage === 'eval_llms' }" @click="currentPage = 'eval_llms'">
+                    <i class="bi bi-cpu"></i> 评估LLM
                 </div>
                 <div class="menu-item" :class="{ active: currentPage === 'datasets' }" @click="currentPage = 'datasets'">
                     <i class="bi bi-database"></i> 数据集管理
@@ -382,11 +393,15 @@
                 </div>
             </div>
 
-            <!-- 大模型管理页面 -->
-            <div v-if="currentPage === 'models'">
+            <!-- 系统LLM管理页面 -->
+            <div v-if="currentPage === 'system_llms'">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h2 class="page-title">大模型管理</h2>
-                    <button class="btn btn-primary" @click="showModelModal()" v-if="currentUser.role === 'admin'"><i class="bi bi-plus-lg"></i> 添加模型</button>
+                    <h2 class="page-title">系统LLM</h2>
+                    <button class="btn btn-primary" @click="showModelModal('system')" v-if="currentUser.role === 'admin'"><i class="bi bi-plus-lg"></i> 添加系统LLM</button>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 系统LLM用于执行系统级任务，如内容审核、安全检测等
                 </div>
 
                 <div class="card">
@@ -405,7 +420,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="model in models" :key="model.id">
+                                    <tr v-for="model in systemModels" :key="model.id">
                                         <td>{{ model.id }}</td>
                                         <td><strong>{{ model.name }}</strong></td>
                                         <td>{{ model.provider || '-' }}</td>
@@ -417,7 +432,7 @@
                                                 <button class="btn btn-sm btn-outline-info" @click="testModelConnection(model.id)" title="测试连接">
                                                     <i class="bi bi-plug"></i>
                                                 </button>
-                                                <button class="btn btn-sm btn-outline-warning" @click="editModel(model)" title="编辑"
+                                                <button class="btn btn-sm btn-outline-warning" @click="editModel(model, 'system')" title="编辑"
                                                     v-if="currentUser.role === 'admin' || !model.created_by">
                                                     <i class="bi bi-pencil"></i>
                                                 </button>
@@ -428,8 +443,68 @@
                                             </div>
                                         </td>
                                     </tr>
-                                    <tr v-if="!models || models.length === 0">
-                                        <td colspan="7" class="text-center text-muted py-4">暂无模型配置</td>
+                                    <tr v-if="!systemModels || systemModels.length === 0">
+                                        <td colspan="7" class="text-center text-muted py-4">暂无系统LLM配置</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 评估LLM管理页面 -->
+            <div v-if="currentPage === 'eval_llms'">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2 class="page-title">评估LLM</h2>
+                    <button class="btn btn-primary" @click="showModelModal('evaluation')" v-if="currentUser.role === 'admin'"><i class="bi bi-plus-lg"></i> 添加评估LLM</button>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 评估LLM用于执行模型安全评估任务
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>名称</th>
+                                        <th>提供商</th>
+                                        <th>类型</th>
+                                        <th>API地址</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="model in evalModels" :key="model.id">
+                                        <td>{{ model.id }}</td>
+                                        <td><strong>{{ model.name }}</strong></td>
+                                        <td>{{ model.provider || '-' }}</td>
+                                        <td>{{ model.model_type || '-' }}</td>
+                                        <td><code>{{ truncateUrl(model.api_url) }}</code></td>
+                                        <td><span class="badge badge-status" :class="'badge-' + model.status">{{ statusText(model.status) }}</span></td>
+                                        <td>
+                                            <div class="action-btns">
+                                                <button class="btn btn-sm btn-outline-info" @click="testModelConnection(model.id)" title="测试连接">
+                                                    <i class="bi bi-plug"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-warning" @click="editModel(model, 'evaluation')" title="编辑"
+                                                    v-if="currentUser.role === 'admin' || !model.created_by">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @click="deleteModel(model.id)" title="删除"
+                                                    v-if="(currentUser.role === 'admin' && !model.created_by) || (model.created_by === currentUser.id)">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!evalModels || evalModels.length === 0">
+                                        <td colspan="7" class="text-center text-muted py-4">暂无评估LLM配置</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -523,7 +598,7 @@
                                         <td><strong>{{ rule.name }}</strong></td>
                                         <td>{{ rule.dataset_name || '-' }}</td>
                                         <td>{{ rule.rule_type }}</td>
-                                        <td>{{ (rule.input_fields || []).join(', ') }}</td>
+                                        <td>{{ getInputFieldsText(rule.input_fields) }}</td>
                                         <td>v{{ rule.version }}</td>
                                         <td>
                                             <span class="badge badge-status" :class="rule.is_active ? 'badge-active' : 'badge-inactive'">
@@ -537,6 +612,9 @@
                                                 </button>
                                                 <button class="btn btn-sm btn-outline-info" @click="viewRuleVersions(rule.id)">
                                                     <i class="bi bi-clock-history"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @click="deleteRule(rule.id)">
+                                                    <i class="bi bi-trash"></i>
                                                 </button>
                                             </div>
                                         </td>
@@ -706,11 +784,18 @@
                                 <input type="text" class="form-control" v-model="modelForm.name" required>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">提供商</label>
-                                <input type="text" class="form-control" v-model="modelForm.provider" placeholder="如: OpenAI, Anthropic, 本地部署">
+                                <label class="form-label">模型类别 *</label>
+                                <select class="form-select" v-model="modelForm.model_category" required>
+                                    <option value="system">系统LLM</option>
+                                    <option value="evaluation">评估LLM</option>
+                                </select>
                             </div>
                         </div>
                         <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">提供商</label>
+                                <input type="text" class="form-control" v-model="modelForm.provider" placeholder="如: OpenAI, Anthropic, 本地部署">
+                            </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">模型类型</label>
                                 <input type="text" class="form-control" v-model="modelForm.model_type" placeholder="如: GPT-4, LLaMA, 文心一言">
@@ -781,14 +866,12 @@
                         <h4 class="text-success">{{ testModelResult.message }}</h4>
                         <hr>
                         <dl class="row text-start mt-3">
-                            <dt class="col-sm-5">响应时间：</dt>
-                            <dd class="col-sm-7"><strong>{{ testModelResult.response_time?.toFixed(2) }} 秒</strong></dd>
                             <dt class="col-sm-5">测试时间：</dt>
                             <dd class="col-sm-7">{{ testModelResult.timestamp }}</dd>
                         </dl>
-                        <div class="alert alert-success mt-3" v-if="testModelResult.model_response">
+                        <div class="alert alert-success mt-3" v-if="testModelResult.response">
                             <strong>模型响应预览：</strong>
-                            <pre class="mb-0 small">{{ testModelResult.model_response }}</pre>
+                            <pre class="mb-0 small">{{ testModelResult.response }}</pre>
                         </div>
                     </div>
                     
@@ -809,7 +892,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-                    <button type="button" class="btn btn-primary" @click="closeTestModal()" 
+                    <button type="button" class="btn btn-primary" @click="testModelConnection(testingModelId)" 
                             v-if="!isTestingModel && testModelResult.status">
                         <i class="bi bi-arrow-repeat"></i> 重新测试
                     </button>
@@ -848,6 +931,79 @@
                             <button type="submit" class="btn btn-primary">上传</button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数据集预览模态框 -->
+    <div class="modal fade" id="datasetPreviewModal" tabindex="-1">
+        <div class="modal-dialog modal-xl" style="max-width: 95%;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">数据集预览 - {{ previewDatasetName }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3 d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-primary me-2">记录数: {{ previewRecordCount }}</span>
+                            <span class="badge bg-info me-2">列数: {{ previewColumns.length }}</span>
+                            <span class="badge bg-secondary">编码: {{ previewEncoding }}</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <span class="me-2">每页:</span>
+                            <select class="form-select form-select-sm" style="width: auto;" v-model="previewPageSize" @change="loadPreviewData">
+                                <option :value="10">10</option>
+                                <option :value="20">20</option>
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                        <table class="table table-sm table-bordered table-hover">
+                            <thead class="table-dark sticky-top">
+                                <tr>
+                                    <th>#</th>
+                                    <th v-for="col in previewColumns">{{ col }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(row, index) in previewData" :key="index">
+                                    <td class="text-muted">{{ (previewPage - 1) * previewPageSize + index + 1 }}</td>
+                                    <td v-for="col in previewColumns">{{ row[col] }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-3 d-flex justify-content-between align-items-center">
+                        <div class="text-muted">
+                            显示第 {{ (previewPage - 1) * previewPageSize + 1 }} - {{ Math.min(previewPage * previewPageSize, previewRecordCount) }} 条，共 {{ previewRecordCount }} 条
+                        </div>
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0">
+                                <li class="page-item" :class="{ disabled: previewPage <= 1 }">
+                                    <a class="page-link" href="#" @click.prevent="changePreviewPage(1)">首页</a>
+                                </li>
+                                <li class="page-item" :class="{ disabled: previewPage <= 1 }">
+                                    <a class="page-link" href="#" @click.prevent="changePreviewPage(previewPage - 1)">上一页</a>
+                                </li>
+                                <li class="page-item" v-for="p in previewVisiblePages" :key="p" :class="{ active: p === previewPage }">
+                                    <a class="page-link" href="#" @click.prevent="changePreviewPage(p)">{{ p }}</a>
+                                </li>
+                                <li class="page-item" :class="{ disabled: previewPage >= previewTotalPages }">
+                                    <a class="page-link" href="#" @click.prevent="changePreviewPage(previewPage + 1)">下一页</a>
+                                </li>
+                                <li class="page-item" :class="{ disabled: previewPage >= previewTotalPages }">
+                                    <a class="page-link" href="#" @click.prevent="changePreviewPage(previewTotalPages)">末页</a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
                 </div>
             </div>
         </div>
@@ -930,17 +1086,7 @@
                             </div>
                         </div>
                         
-                        <!-- 额外输入区域1：输出格式要求 -->
-                        <div class="mb-3">
-                            <label class="form-label">
-                                输出格式要求
-                                <span class="badge bg-secondary ms-2">可选</span>
-                            </label>
-                            <textarea class="form-control" v-model="ruleForm.output_format" rows="2" 
-                                      placeholder="定义期望的输出格式，如：JSON、文本等"></textarea>
-                        </div>
-                        
-                        <!-- 额外输入区域2：评估标准说明 -->
+                        <!-- 额外输入区域：评估标准说明 -->
                         <div class="mb-3">
                             <label class="form-label">
                                 评估标准说明
@@ -950,18 +1096,30 @@
                                       placeholder="详细描述评估标准和判断依据"></textarea>
                         </div>
                         
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">期望输出字段</label>
+                        <!-- 期望输出字段（移到评估标准说明上面，增加数据集字段点击添加） -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                期望输出字段
+                                <span class="badge bg-secondary ms-2">可选</span>
+                            </label>
+                            <div class="input-group">
                                 <input type="text" class="form-control" v-model="ruleForm.expected_field" 
-                                       placeholder="如有标准答案可指定">
+                                       placeholder="如有标准答案可指定，多个字段用；号隔开">
+                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="从数据集字段选择">
+                                    <i class="bi bi-caret-down"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end w-50" style="max-height: 200px; overflow-y: auto;">
+                                    <li v-for="(field, index) in datasetFields" :key="index">
+                                        <a class="dropdown-item" href="#" @click.prevent="addFieldToExpected(field.name)">
+                                            {{ field.name }} <small class="text-muted">({{ field.type }})</small>
+                                        </a>
+                                    </li>
+                                    <li v-if="datasetFields.length === 0"><span class="dropdown-item text-muted">无可用字段</span></li>
+                                </ul>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">通过条件</label>
-                                <input type="text" class="form-control" v-model="ruleForm.pass_condition" 
-                                       placeholder="定义通过条件">
-                            </div>
+                            <small class="text-muted">点击右侧按钮从数据集字段选择，或手动输入多个字段（用；号隔开）</small>
                         </div>
+                        
                         <div class="text-end">
                             <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">取消</button>
                             <button type="submit" class="btn btn-primary">保存规则</button>
@@ -990,14 +1148,14 @@
                             <label class="form-label">选择被评估模型 *</label>
                             <select class="form-select" v-model="taskForm.model_id" required>
                                 <option value="">请选择模型</option>
-                                <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }}</option>
+                                <option v-for="m in evalModels" :key="m.id" :value="m.id">{{ m.name }}</option>
                             </select>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">选择数据集 *</label>
                             <select class="form-select" v-model="taskForm.dataset_id" @change="autoBindRules" required>
                                 <option value="">请选择数据集</option>
-                                <option v-for="ds in datasets" :key="ds.id" :value="ds.id">{{ ds.name }}</option>
+                                <option v-for="ds in datasetsWithRules" :key="ds.id" :value="ds.id">{{ ds.name }}</option>
                             </select>
                         </div>
                         
@@ -1108,8 +1266,14 @@
                     <div class="mb-3 d-flex justify-content-between align-items-center">
                         <span>共 {{ taskResults.total }} 条记录</span>
                         <div>
-                            <button class="btn btn-sm btn-outline-success" @click="downloadReport(currentViewingTaskId)">
-                                <i class="bi bi-download"></i> 下载完整报告
+                            <button class="btn btn-sm btn-outline-success" @click="downloadFullReport(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
+                                <i class="bi bi-file-earmark-json"></i> 全量JSON
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" @click="downloadFailedReport(currentViewingTaskId)">
+                                <i class="bi bi-file-earmark-x"></i> 未通过JSON
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" @click="downloadReport(currentViewingTaskId)">
+                                <i class="bi bi-file-earmark-pdf"></i> PDF报告
                             </button>
                         </div>
                     </div>
@@ -1174,6 +1338,7 @@ const app = createApp({
     setup() {
         // 状态变量
         const isLoggedIn = ref(false);
+        const isLoading = ref(true);
         const currentPage = ref('dashboard');
         const currentUser = ref({});
         const token = ref('');
@@ -1183,6 +1348,8 @@ const app = createApp({
         
         // 数据列表
         const models = ref([]);
+        const systemModels = ref([]);
+        const evalModels = ref([]);
         const datasets = ref([]);
         const rules = ref([]);
         const tasks = ref([]);
@@ -1210,7 +1377,7 @@ const app = createApp({
         const editingRule = ref(null);
         const ruleForm = ref({
             name: '', dataset_id: '', rule_type: 'safety',
-            inputFieldsText: '', expected_field: '', pass_condition: ''
+            inputFieldsText: '', expected_field: ''
         });
         
         const taskForm = ref({ name: '', model_id: '', dataset_id: '', rule_id: '' });
@@ -1220,12 +1387,15 @@ const app = createApp({
         
         const taskResults = ref({ total: 0, totalPages: 0, currentPage: 1, results: [] });
         const currentViewingTaskId = ref(null);
+        const selectedResult = ref(null);
         
         // 计算属性
         const pageTitle = computed(() => {
             const titles = {
                 dashboard: '系统仪表板',
                 models: '大模型管理',
+                system_llms: '系统LLM',
+                eval_llms: '评估LLM',
                 datasets: '数据集管理',
                 rules: '评估规则管理',
                 tasks: '评估任务',
@@ -1234,9 +1404,29 @@ const app = createApp({
             return titles[currentPage.value] || '仪表板';
         });
         
+        const datasetsWithRules = computed(() => {
+            const ruleDatasetIds = new Set(rules.value.map(r => r.dataset_id));
+            return datasets.value.filter(ds => ruleDatasetIds.has(ds.id));
+        });
+        
         const roleText = computed(() => {
             const roles = { admin: '管理员', auditor: '审计员', user: '用户' };
             return roles[currentUser.value.role] || '未知';
+        });
+        
+        const previewVisiblePages = computed(() => {
+            const pages = [];
+            const total = previewTotalPages.value;
+            const current = previewPage.value;
+            let start = Math.max(1, current - 2);
+            let end = Math.min(total, start + 4);
+            if (end - start < 4) {
+                start = Math.max(1, end - 4);
+            }
+            for (let i = start; i <= end; i++) {
+                pages.push(i);
+            }
+            return pages;
         });
         
         const roleTextMap = { admin: '管理员', auditor: '审计员', user: '用户' };
@@ -1385,12 +1575,31 @@ const app = createApp({
         }
         
         // 加载各模块数据
-        async function loadModels() {
+        async function loadModels(category = null) {
             try {
-                models.value = await apiRequest('GET', '/api/models');
+                const url = category ? `/api/models?category=${category}` : '/api/models';
+                models.value = await apiRequest('GET', url);
             } catch (error) {
                 console.error('加载模型列表失败:', error);
                 models.value = [];
+            }
+        }
+        
+        async function loadSystemLLMs() {
+            try {
+                systemModels.value = await apiRequest('GET', '/api/models?category=system');
+            } catch (error) {
+                console.error('加载系统LLM列表失败:', error);
+                systemModels.value = [];
+            }
+        }
+        
+        async function loadEvalLLMs() {
+            try {
+                evalModels.value = await apiRequest('GET', '/api/models?category=evaluation');
+            } catch (error) {
+                console.error('加载评估LLM列表失败:', error);
+                evalModels.value = [];
             }
         }
         
@@ -1427,29 +1636,36 @@ const app = createApp({
         
         // 监听页面切换加载数据
         watch(currentPage, (newPage) => {
+            if (!isLoggedIn.value) return;
+            
             localStorage.setItem('currentPage', newPage);
+            
             switch(newPage) {
                 case 'dashboard': loadDashboardData(); break;
                 case 'models': loadModels(); break;
+                case 'system_llms': loadSystemLLMs(); break;
+                case 'eval_llms': loadEvalLLMs(); break;
                 case 'datasets': loadDatasets(); break;
-                case 'rules': loadRules(); break;
+                case 'rules': 
+                    if (currentUser.value && currentUser.value.role === 'admin') loadRules(); 
+                    break;
                 case 'tasks': loadTasks(); break;
-                case 'users': loadUsers(); break;
+                case 'users': 
+                    if (currentUser.value && currentUser.value.role === 'admin') loadUsers(); 
+                    break;
             }
-        });
+        }, { immediate: false });
         
         // 模型相关方法
-        function showModelModal(model = null) {
-            editingModel.value = model;
-            if (model) {
-                modelForm.value = { ...model };
-            } else {
-                modelForm.value = {
-                    name: '', provider: '', model_type: '', api_url: '',
-                    api_key: '', auth_type: 'api_key',
-                    max_tokens: 2048, temperature: 0.7, timeout: 30
-                };
-            }
+        function showModelModal(category = 'evaluation') {
+            editingModel.value = null;
+            const defaultCategory = category || 'evaluation';
+            modelForm.value = {
+                name: '', provider: '', model_type: '', api_url: '',
+                api_key: '', auth_type: 'api_key',
+                max_tokens: 2048, temperature: 0.7, timeout: 30,
+                model_category: defaultCategory
+            };
             new bootstrap.Modal(document.getElementById('modelModal')).show();
         }
         
@@ -1457,26 +1673,44 @@ const app = createApp({
             try {
                 if (editingModel.value) {
                     await apiRequest('PUT', `/api/models/${editingModel.value.id}`, modelForm.value);
+                    if (modelForm.value.model_category === 'system') {
+                        loadSystemLLMs();
+                    } else {
+                        loadEvalLLMs();
+                    }
                 } else {
                     await apiRequest('POST', '/api/models', modelForm.value);
+                    if (modelForm.value.model_category === 'system') {
+                        loadSystemLLMs();
+                    } else {
+                        loadEvalLLMs();
+                    }
                 }
                 bootstrap.Modal.getInstance(document.getElementById('modelModal')).hide();
-                loadModels();
                 loadDashboardData();
             } catch (error) {
                 alert('保存失败: ' + error.message);
             }
         }
         
-        function editModel(model) {
-            showModelModal(model);
+        function editModel(model, category = null) {
+            editingModel.value = model;
+            modelForm.value = { ...model };
+            if (!modelForm.value.model_category) {
+                modelForm.value.model_category = category || 'evaluation';
+            }
+            new bootstrap.Modal(document.getElementById('modelModal')).show();
         }
         
-        async function deleteModel(id) {
+        async function deleteModel(id, category = 'evaluation') {
             if (!confirm('确定要删除此模型吗？')) return;
             try {
                 await apiRequest('DELETE', `/api/models/${id}`);
-                loadModels();
+                if (category === 'system') {
+                    loadSystemLLMs();
+                } else {
+                    loadEvalLLMs();
+                }
                 loadDashboardData();
             } catch (error) {
                 alert('删除失败: ' + error.message);
@@ -1485,33 +1719,37 @@ const app = createApp({
         
         const testModelResult = ref({});
         const isTestingModel = ref(false);
+        const testingModelId = ref(null);
         
         async function testModelConnection(id) {
+            testingModelId.value = id;
             isTestingModel.value = true;
             testModelResult.value = { status: 'testing', message: '正在测试连接...', progress: 0 };
             
-            new bootstrap.Modal(document.getElementById('testModelModal')).show();
+            // 首次打开模态框
+            const modalEl = document.getElementById('testModelModal');
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
             
             try {
                 testModelResult.value = { status: 'testing', message: '发送测试请求...', progress: 20 };
                 
                 const result = await apiRequest('POST', `/api/models/${id}/test`);
                 
-                if (result.success) {
+                if (result.status === 'success') {
                     testModelResult.value = {
                         status: 'success',
                         message: '连接成功！',
                         progress: 100,
-                        response_time: result.response_time,
-                        model_response: result.model_response?.substring(0, 200) || '无响应内容',
+                        response: result.response?.substring(0, 200) || '无响应内容',
                         timestamp: new Date().toLocaleString()
                     };
                 } else {
                     testModelResult.value = {
                         status: 'error',
-                        message: '连接失败',
+                        message: result.message || '连接失败',
                         progress: 100,
-                        error: result.error,
+                        error: result.detail || result.message,
                         timestamp: new Date().toLocaleString()
                     };
                 }
@@ -1559,7 +1797,7 @@ const app = createApp({
                 
                 const result = await apiRequest('POST', '/api/datasets/upload', formData, true);
                 bootstrap.Modal.getInstance(document.getElementById('datasetModal')).hide();
-                alert(`数据集上传成功！共 ${result.rows} 行，${result.columns.length} 列`);
+                alert(`数据集上传成功！文件路径: ${result.file_path}\n编码: ${result.detected_encoding}`);
                 loadDatasets();
                 loadDashboardData();
             } catch (error) {
@@ -1568,7 +1806,46 @@ const app = createApp({
         }
         
         async function previewDataset(id) {
-            alert('数据预览功能开发中...');
+            try {
+                const dataset = datasets.value.find(d => d.id === id);
+                if (dataset) {
+                    previewDatasetName.value = dataset.name;
+                }
+                
+                previewCurrentDatasetId.value = id;
+                previewPage.value = 1;
+                previewPageSize.value = 50;
+                
+                await loadPreviewData();
+                
+                new bootstrap.Modal(document.getElementById('datasetPreviewModal')).show();
+            } catch (error) {
+                alert('预览失败: ' + error.message);
+            }
+        }
+        
+        async function loadPreviewData() {
+            if (!previewCurrentDatasetId.value) return;
+            
+            try {
+                const result = await apiRequest('GET', 
+                    `/api/datasets/${previewCurrentDatasetId.value}/data?page=${previewPage.value}&page_size=${previewPageSize.value}`);
+                previewData.value = result.data;
+                previewColumns.value = result.columns;
+                previewRecordCount.value = result.record_count;
+                previewTotalPages.value = result.total_pages;
+                
+                const dataset = datasets.value.find(d => d.id === previewCurrentDatasetId.value);
+                previewEncoding.value = dataset ? (dataset.encoding || 'utf-8') : 'utf-8';
+            } catch (error) {
+                alert('加载数据失败: ' + error.message);
+            }
+        }
+        
+        function changePreviewPage(page) {
+            if (page < 1 || page > previewTotalPages.value) return;
+            previewPage.value = page;
+            loadPreviewData();
         }
         
         async function deleteDataset(id) {
@@ -1586,14 +1863,25 @@ const app = createApp({
         function showRuleModal(rule = null) {
             editingRule.value = rule;
             if (rule) {
+                // 解析 input_fields（可能是JSON字符串或数组）
+                let inputFields = [];
+                if (Array.isArray(rule.input_fields)) {
+                    inputFields = rule.input_fields;
+                } else if (typeof rule.input_fields === 'string') {
+                    try {
+                        const parsed = JSON.parse(rule.input_fields);
+                        inputFields = parsed.input_fields || parsed;
+                    } catch {
+                        inputFields = rule.input_fields.split('\n').filter(f => f.trim());
+                    }
+                }
+                
                 ruleForm.value = {
                     name: rule.name,
                     dataset_id: rule.dataset_id,
-                    rule_type: rule.rule_type,
-                    inputFieldsText: rule.input_fields.join('\n'),
+                    rule_type: rule.rule_type || 'safety',
+                    inputFieldsText: Array.isArray(inputFields) ? inputFields.join('\n') : '',
                     expected_field: rule.expected_field || '',
-                    pass_condition: rule.pass_condition || '',
-                    output_format: rule.output_format || '',
                     evaluation_criteria: rule.evaluation_criteria || ''
                 };
                 if (rule.dataset_id) {
@@ -1602,8 +1890,8 @@ const app = createApp({
             } else {
                 ruleForm.value = {
                     name: '', dataset_id: '', rule_type: 'safety',
-                    inputFieldsText: '', expected_field: '', pass_condition: '',
-                    output_format: '', evaluation_criteria: ''
+                    inputFieldsText: '', expected_field: '', 
+                    evaluation_criteria: ''
                 };
                 datasetFields.value = [];
             }
@@ -1611,6 +1899,16 @@ const app = createApp({
         }
         
         const datasetFields = ref([]);
+        
+        const previewDatasetName = ref('');
+        const previewData = ref([]);
+        const previewColumns = ref([]);
+        const previewRecordCount = ref(0);
+        const previewEncoding = ref('');
+        const previewPage = ref(1);
+        const previewPageSize = ref(50);
+        const previewTotalPages = ref(1);
+        const previewCurrentDatasetId = ref(null);
         
         async function loadDatasetFields() {
             if (!ruleForm.value.dataset_id) {
@@ -1659,6 +1957,34 @@ const app = createApp({
             }
         }
         
+        function addFieldToExpected(fieldName) {
+            if (!fieldName || !fieldName.trim()) return;
+            
+            const currentFields = ruleForm.value.expected_field || '';
+            const fields = currentFields.split(';').map(f => f.trim()).filter(f => f);
+            
+            if (fields.includes(fieldName)) {
+                alert(`字段 "${fieldName}" 已存在`);
+                return;
+            }
+            
+            if (fields.length === 0) {
+                ruleForm.value.expected_field = fieldName;
+            } else {
+                ruleForm.value.expected_field = fields.join(';') + ';' + fieldName;
+            }
+        }
+        
+        async function deleteRule(id) {
+            if (!confirm('确定要删除此评估规则吗？')) return;
+            try {
+                await apiRequest('DELETE', `/api/rules/${id}`);
+                loadRules();
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+        
         async function saveRule() {
             try {
                 const payload = {
@@ -1667,7 +1993,7 @@ const app = createApp({
                     rule_type: ruleForm.value.rule_type,
                     input_fields: ruleForm.value.inputFieldsText.split('\n').filter(f => f.trim()),
                     expected_field: ruleForm.value.expected_field || null,
-                    pass_condition: ruleForm.value.pass_condition,
+                    evaluation_criteria: ruleForm.value.evaluation_criteria || null,
                     risk_levels: { high: '高风险', medium: '中风险', low: '低风险' }
                 };
                 
@@ -1697,6 +2023,9 @@ const app = createApp({
         function showTaskModal() {
             taskForm.value = { name: '', model_id: '', dataset_id: '', rule_id: '' };
             boundRules.value = [];
+            loadEvalLLMs();
+            loadDatasets();
+            loadRules();
             new bootstrap.Modal(document.getElementById('taskModal')).show();
         }
         
@@ -1752,7 +2081,15 @@ const app = createApp({
         }
         
         async function downloadReport(id) {
-            window.open(`http://localhost:8000/api/tasks/${id}/download?token=${token.value}`, '_blank');
+            window.open(`http://localhost:8000/api/tasks/${id}/download`, '_blank');
+        }
+        
+        async function downloadFullReport(id) {
+            window.open(`http://localhost:8000/api/tasks/${id}/download/full`, '_blank');
+        }
+        
+        async function downloadFailedReport(id) {
+            window.open(`http://localhost:8000/api/tasks/${id}/download/failed`, '_blank');
         }
         
         async function deleteTask(id) {
@@ -1811,6 +2148,26 @@ const app = createApp({
             return url.length > 40 ? url.substring(0, 37) + '...' : url;
         }
         
+        function getInputFieldsText(inputFields) {
+            if (!inputFields) return '-';
+            if (Array.isArray(inputFields)) {
+                return inputFields.join(', ');
+            }
+            if (typeof inputFields === 'string') {
+                try {
+                    const parsed = JSON.parse(inputFields);
+                    if (Array.isArray(parsed)) {
+                        return parsed.join(', ');
+                    }
+                    if (parsed.input_fields && Array.isArray(parsed.input_fields)) {
+                        return parsed.input_fields.join(', ');
+                    }
+                } catch {}
+                return inputFields;
+            }
+            return String(inputFields);
+        }
+        
         function formatTime(timeStr) {
             if (!timeStr) return '-';
             const date = new Date(timeStr);
@@ -1856,30 +2213,20 @@ const app = createApp({
         onMounted(async () => {
             const savedToken = localStorage.getItem('token');
             const savedUser = localStorage.getItem('user');
-            const savedPage = localStorage.getItem('currentPage');
             
             if (savedToken && savedUser) {
                 try {
+                    const user = JSON.parse(savedUser);
                     token.value = savedToken;
-                    currentUser.value = JSON.parse(savedUser);
-                    await loadDashboardData();
-                    
+                    currentUser.value = user;
                     isLoggedIn.value = true;
-                    
-                    if (savedPage) {
-                        currentPage.value = savedPage;
-                    }
-                } catch (error) {
-                    console.error('验证登录状态失败:', error);
-                    token.value = '';
-                    currentUser.value = {};
-                    isLoggedIn.value = false;
+                    loadDashboardData();
+                } catch (e) {
                     localStorage.removeItem('token');
                     localStorage.removeItem('user');
-                    localStorage.removeItem('currentPage');
-                    loginError.value = '';
                 }
             }
+            isLoading.value = false;
         });
         
         return {
@@ -1887,26 +2234,30 @@ const app = createApp({
             isLoggedIn, currentPage, currentUser, token,
             loginForm, loginError,
             models, datasets, rules, tasks, users, stats,
+            systemModels, evalModels,
             editingModel, modelForm,
             datasetForm, selectedFile,
             editingRule, ruleForm, datasetFields,
+            previewDatasetName, previewData, previewColumns, previewRecordCount, previewEncoding,
+            previewPage, previewPageSize, previewTotalPages, previewVisiblePages,
             taskForm, boundRules,
             editingUser, userForm,
             taskResults, currentViewingTaskId,
             testModelResult, isTestingModel,
             
             // 计算属性
-            pageTitle, roleText, roleTextMap,
+            pageTitle, roleText, roleTextMap, datasetsWithRules,
             
             // 方法
             login, logout,
-            loadModels, loadDatasets, loadRules, loadTasks, loadUsers,
+            loadModels, loadSystemLLMs, loadEvalLLMs, loadDatasets, loadRules, loadTasks, loadUsers,
             showModelModal, saveModel, editModel, deleteModel, testModelConnection, canDeleteModel, closeTestModal,
-            showDatasetUpload, handleFileSelect, uploadDataset, previewDataset, deleteDataset,
-            showRuleModal, saveRule, editRule, viewRuleVersions, loadDatasetFields, addFieldToInput,
-            showTaskModal, createTask, autoBindRules, viewTaskResults, changeResultsPage, downloadReport, deleteTask,
+            showDatasetUpload, handleFileSelect, uploadDataset, previewDataset, loadPreviewData, changePreviewPage, deleteDataset,
+            showRuleModal, saveRule, editRule, viewRuleVersions, loadDatasetFields, addFieldToInput, addFieldToExpected, deleteRule,
+            showTaskModal, createTask, autoBindRules, viewTaskResults, changeResultsPage, 
+            downloadReport, downloadFullReport, downloadFailedReport, deleteTask,
             showUserModal, saveUser, editUser, deleteUser,
-            truncateUrl, formatTime, statusText, taskStatusText,
+            truncateUrl, formatTime, statusText, taskStatusText, getInputFieldsText,
             roleBadgeClass, resultBadgeClass, resultResultText, riskBadgeClass, riskLevelText
         };
     }
