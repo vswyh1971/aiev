@@ -406,7 +406,7 @@
 
                 <div class="card">
                     <div class="card-body">
-                        <div class="table-responsive">
+                        <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
                             <table class="table table-hover">
                                 <thead>
                                     <tr>
@@ -466,7 +466,7 @@
 
                 <div class="card">
                     <div class="card-body">
-                        <div class="table-responsive">
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                             <table class="table table-hover">
                                 <thead>
                                     <tr>
@@ -522,7 +522,7 @@
 
                 <div class="card">
                     <div class="card-body">
-                        <div class="table-responsive">
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                             <table class="table table-hover">
                                 <thead>
                                     <tr>
@@ -578,7 +578,7 @@
 
                 <div class="card">
                     <div class="card-body">
-                        <div class="table-responsive">
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                             <table class="table table-hover">
                                 <thead>
                                     <tr>
@@ -638,7 +638,7 @@
 
                 <div class="card">
                     <div class="card-body">
-                        <div class="table-responsive">
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                             <table class="table table-hover">
                                 <thead>
                                     <tr>
@@ -714,7 +714,7 @@
 
                 <div class="card">
                     <div class="card-body">
-                        <div class="table-responsive">
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                             <table class="table table-hover">
                                 <thead>
                                     <tr>
@@ -886,6 +886,11 @@
                     <div v-else class="text-center py-4 text-muted">
                         <i class="bi bi-plug" style="font-size: 3rem;"></i>
                         <p class="mt-2">点击"开始测试"按钮开始连接测试</p>
+                        <hr>
+                        <div class="text-start">
+                            <label for="testPrompt" class="form-label">自定义测试问题（可选）：</label>
+                            <textarea id="testPrompt" class="form-control" v-model="testPrompt" rows="3" placeholder="请输入测试问题，留空则使用默认问题"></textarea>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1271,15 +1276,18 @@
                 <div class="modal-body">
                     <div class="mb-3 d-flex justify-content-between align-items-center">
                         <span>共 {{ taskResults.total }} 条记录</span>
-                        <div>
+                        <div class="btn-group" role="group">
+                            <button class="btn btn-sm btn-outline-success" @click="downloadFullPdf(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
+                                <i class="bi bi-file-earmark-pdf"></i> 全量PDF
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" @click="downloadFailedPdf(currentViewingTaskId)">
+                                <i class="bi bi-file-earmark-pdf"></i> 不合格PDF
+                            </button>
                             <button class="btn btn-sm btn-outline-success" @click="downloadFullReport(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
                                 <i class="bi bi-file-earmark-json"></i> 全量JSON
                             </button>
-                            <button class="btn btn-sm btn-outline-warning" @click="downloadFailedReport(currentViewingTaskId)">
+                            <button class="btn btn-sm btn-outline-info" @click="downloadFailedReport(currentViewingTaskId)">
                                 <i class="bi bi-file-earmark-x"></i> 未通过JSON
-                            </button>
-                            <button class="btn btn-sm btn-outline-primary" @click="downloadReport(currentViewingTaskId)">
-                                <i class="bi bi-file-earmark-pdf"></i> PDF报告
                             </button>
                         </div>
                     </div>
@@ -1463,8 +1471,8 @@ const app = createApp({
             }
             
             try {
-                console.log('发送API请求:', method, `http://localhost:8000${url}`);
-                const response = await fetch(`http://localhost:8000${url}`, options);
+                console.log('发送API请求:', method, `http://localhost:8001${url}`);
+                const response = await fetch(`http://localhost:8001${url}`, options);
                 console.log('API响应状态:', response.status);
                 
                 if (response.status === 401) {
@@ -1763,13 +1771,17 @@ const app = createApp({
         }
         
         const testModelResult = ref({});
+        const testPrompt = ref('请介绍一下人工智能的发展历史');
         const isTestingModel = ref(false);
         const testingModelId = ref(null);
         
         async function testModelConnection(id) {
-            testingModelId.value = id;
+            testingModelId.value = Number(id);
             isTestingModel.value = true;
             testModelResult.value = { status: 'testing', message: '正在测试连接...', progress: 0 };
+            
+            // 确保id是数字类型
+            const modelId = Number(id);
             
             // 首次打开模态框
             const modalEl = document.getElementById('testModelModal');
@@ -1781,7 +1793,7 @@ const app = createApp({
                 
                 // 先获取所有模型，找到当前模型的类型
                 const allModels = await apiRequest('GET', '/api/models');
-                const model = allModels.find(m => m.id === id);
+                const model = allModels.find(m => m.id === modelId);
                 
                 if (!model) {
                     throw new Error('模型不存在');
@@ -1789,12 +1801,17 @@ const app = createApp({
                 
                 testModelResult.value = { status: 'testing', message: '发送测试请求...', progress: 20 };
                 
+                // 准备请求体
+                const requestBody = {
+                    prompt: testPrompt.value || "请介绍一下人工智能的发展历史"
+                };
+                
                 // 根据模型类型调用相应的测试接口
                 let result;
                 if (model.model_category === 'system') {
-                    result = await apiRequest('POST', `/api/models/system/${id}/test`);
+                    result = await apiRequest('POST', `/api/models/system/${id}/test`, requestBody);
                 } else if (model.model_category === 'evaluation') {
-                    result = await apiRequest('POST', `/api/models/evaluation/${id}/test`);
+                    result = await apiRequest('POST', `/api/models/evaluation/${id}/test`, requestBody);
                 } else {
                     throw new Error('模型类型未知');
                 }
@@ -1926,10 +1943,32 @@ const app = createApp({
         function showRuleModal(rule = null) {
             editingRule.value = rule;
             if (rule) {
-                // 解析 input_fields（可能是JSON字符串或数组）
+                // 解析 input_fields（可能是JSON字符串或数组，或在rule_config中）
                 let inputFields = [];
-                if (Array.isArray(rule.input_fields)) {
+                let ruleConfig = {};
+                
+                // 优先从 rule_config 对象获取
+                if (rule.rule_config && typeof rule.rule_config === 'object') {
+                    ruleConfig = rule.rule_config;
+                } 
+                // 尝试解析 rule_config_json 字符串
+                else if (rule.rule_config_json) {
+                    try {
+                        ruleConfig = typeof rule.rule_config_json === 'string' 
+                            ? JSON.parse(rule.rule_config_json) 
+                            : rule.rule_config_json;
+                    } catch (e) {
+                        console.error('解析rule_config_json失败:', e);
+                    }
+                }
+                
+                // 获取 input_fields
+                if (Array.isArray(ruleConfig.input_fields)) {
+                    inputFields = ruleConfig.input_fields;
+                } else if (Array.isArray(rule.input_fields)) {
                     inputFields = rule.input_fields;
+                } else if (typeof ruleConfig.input_fields === 'string') {
+                    inputFields = ruleConfig.input_fields.split('\n').filter(f => f.trim());
                 } else if (typeof rule.input_fields === 'string') {
                     try {
                         const parsed = JSON.parse(rule.input_fields);
@@ -1939,16 +1978,19 @@ const app = createApp({
                     }
                 }
                 
+                // 获取 dataset_id（可能是 rule_config.dataset_id 或直接是 rule.dataset_id）
+                const datasetId = ruleConfig.dataset_id || rule.dataset_id;
+                
                 ruleForm.value = {
                     name: rule.name,
-                    dataset_id: rule.dataset_id,
-                    rule_type: rule.rule_type || 'safety',
+                    dataset_id: datasetId,
+                    rule_type: rule.rule_type || ruleConfig.rule_type || 'safety',
                     inputFieldsText: Array.isArray(inputFields) ? inputFields.join('\n') : '',
-                    expected_field: rule.expected_field || '',
-                    evaluation_criteria: rule.evaluation_criteria || '',
-                    evaluation_type: rule.evaluation_type || 'content_safety'
+                    expected_field: ruleConfig.expected_field || rule.expected_field || '',
+                    evaluation_criteria: ruleConfig.evaluation_criteria || rule.evaluation_criteria || '',
+                    evaluation_type: ruleConfig.evaluation_type || rule.evaluation_type || 'content_safety'
                 };
-                if (rule.dataset_id) {
+                if (datasetId) {
                     loadDatasetFields();
                 }
             } else {
@@ -2076,8 +2118,19 @@ const app = createApp({
             }
         }
         
-        function editRule(rule) {
-            showRuleModal(rule);
+        async function editRule(rule) {
+            try {
+                // 获取完整的规则详情
+                const response = await apiRequest('GET', `/api/rules/${rule.id}`);
+                if (response && response.id) {
+                    showRuleModal(response);
+                } else {
+                    showRuleModal(rule);
+                }
+            } catch (error) {
+                console.error('获取规则详情失败:', error);
+                showRuleModal(rule);
+            }
         }
         
         async function viewRuleVersions(id) {
@@ -2088,7 +2141,7 @@ const app = createApp({
         const boundRules = ref([]);
         
         function showTaskModal() {
-            taskForm.value = { name: '', model_id: '', dataset_id: '', rule_id: '' };
+            taskForm.value = { name: '', model_id: '', model_category: 'system', dataset_id: '', rule_id: '' };
             boundRules.value = [];
             loadEvalLLMs();
             loadDatasets();
@@ -2124,8 +2177,9 @@ const app = createApp({
                 const result = await apiRequest('POST', '/api/tasks', {
                     name: taskForm.value.name,
                     model_id: parseInt(taskForm.value.model_id),
+                    model_category: taskForm.value.model_category || 'system',
                     dataset_id: parseInt(taskForm.value.dataset_id),
-                    rule_id: parseInt(taskForm.value.rule_id)
+                    rule_id: taskForm.value.rule_id ? parseInt(taskForm.value.rule_id) : null
                 });
                 bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();
                 alert('评估任务已创建并加入队列！');
@@ -2161,7 +2215,7 @@ const app = createApp({
         
         async function downloadReport(id) {
             try {
-                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download`, {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2188,7 +2242,7 @@ const app = createApp({
         
         async function downloadFullReport(id) {
             try {
-                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full`, {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/full`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2215,7 +2269,7 @@ const app = createApp({
         
         async function downloadFailedReport(id) {
             try {
-                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/failed`, {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/failed-report`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2228,6 +2282,60 @@ const app = createApp({
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = `failed_report_${id}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } else {
+                    throw new Error('下载失败');
+                }
+            } catch (error) {
+                alert('下载失败: ' + error.message);
+            }
+        }
+        
+        async function downloadFullPdf(id) {
+            try {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/full-pdf`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token.value}`
+                    },
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `full_report_${id}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } else {
+                    throw new Error('下载失败');
+                }
+            } catch (error) {
+                alert('下载失败: ' + error.message);
+            }
+        }
+        
+        async function downloadFailedPdf(id) {
+            try {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/failed-pdf`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token.value}`
+                    },
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `failed_report_${id}.pdf`;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
@@ -2391,7 +2499,7 @@ const app = createApp({
             taskForm, boundRules,
             editingUser, userForm,
             taskResults, currentViewingTaskId,
-            testModelResult, isTestingModel,
+            testModelResult, testPrompt, isTestingModel,
             
             // 计算属性
             pageTitle, roleText, roleTextMap, datasetsWithRules,
@@ -2403,7 +2511,7 @@ const app = createApp({
             showDatasetUpload, handleFileSelect, uploadDataset, previewDataset, loadPreviewData, changePreviewPage, deleteDataset,
             showRuleModal, saveRule, editRule, viewRuleVersions, loadDatasetFields, addFieldToInput, addFieldToExpected, deleteRule,
             showTaskModal, createTask, autoBindRules, viewTaskResults, changeResultsPage, 
-            downloadReport, downloadFullReport, downloadFailedReport, deleteTask,
+            downloadReport, downloadFullReport, downloadFailedReport, downloadFullPdf, downloadFailedPdf, deleteTask,
             showUserModal, saveUser, editUser, deleteUser,
             truncateUrl, formatTime, statusText, taskStatusText, getInputFieldsText,
             roleBadgeClass, resultBadgeClass, resultResultText, riskBadgeClass, riskLevelText

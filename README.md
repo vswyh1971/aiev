@@ -223,14 +223,31 @@
    pip install -r requirements.txt
    ```
 
-3. 启动后端服务：
+### 启动系统
+
+#### 方式一：使用启动脚本（推荐）
+```bash
+# Windows PowerShell
+.\start.ps1
+
+# 或双击 start.ps1 文件
+```
+
+#### 方式二：手动启动
+1. 启动后端服务：
    ```bash
    cd backend
    python main.py
    ```
 
-4. 访问前端界面：
-   - 在浏览器中打开 `frontend/index.html`
+2. 启动前端服务（另开终端）：
+   ```bash
+   python -m http.server 8080 --directory frontend
+   ```
+
+3. 访问系统：
+   - 后端API: http://localhost:8000
+   - 前端界面: http://localhost:8080
    - 默认管理员账号：admin
    - 默认管理员密码：admin123
 
