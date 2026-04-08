@@ -244,8 +244,6 @@ def init_database():
             input_data TEXT,
             model_output TEXT,
             evaluation_result VARCHAR(20),
-            score INTEGER,
-            risk_level VARCHAR(20),
             details_text TEXT,
             model_response_time FLOAT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -517,6 +515,16 @@ def run_evaluation(task_id: int):
     logger.info(f"开始评估任务: {task_name} (ID: {task_id})")
     logger.info(f"评估LLM ID: {eval_model_id}")
     
+    # ========== 步骤0: 删除现有评估结果 ==========
+    logger.info("步骤0: 删除现有评估结果")
+    try:
+        # 删除该任务的所有现有评估结果
+        cursor.execute("DELETE FROM evaluation_results WHERE task_id = ?", (task_id,))
+        conn.commit()
+        logger.info(f"成功删除任务 {task_id} 的现有评估结果")
+    except Exception as e:
+        logger.error(f"删除现有评估结果失败: {str(e)}")
+    
     # ========== 步骤1: 测试评估LLM连接 ==========
     logger.info("步骤1: 测试评估LLM连接")
     
@@ -684,118 +692,141 @@ def run_evaluation(task_id: int):
     print(f"\n开始评估 {total_cases} 条数据...")
     
     for idx, row in df.iterrows():
-        try:
-            # 准备输入数据
-            input_data = {field: str(row.get(field, '')) for field in input_fields if field in row}
-            
-            # 获取标准答案（违规标签）
-            primary_label = row.get(label_mapping['primary_label'], '') if label_mapping['primary_label'] else ''
-            secondary_label = row.get(label_mapping['secondary_label'], '') if label_mapping['secondary_label'] else ''
-            third_label = row.get(label_mapping['third_label'], '') if label_mapping['third_label'] else ''
-            
-            # 将违规标签添加到input_data中，确保评估器能够使用
-            if primary_label:
-                input_data['primaryLabel'] = primary_label
-            if secondary_label:
-                input_data['secondaryLabel'] = secondary_label
-            if third_label:
-                input_data['thirdLabel'] = third_label
-            
-            # 构建违规标准（来自数据集的标注）
-            violation_criteria = ""
-            if primary_label:
-                violation_criteria += f"主要违规类型: {primary_label};"
-            if secondary_label:
-                violation_criteria += f"次要违规类型: {secondary_label};"
-            if third_label:
-                violation_criteria += f"三级违规类型: {third_label};"
-            
-            if not input_data:
-                print(f"警告: 第{idx}行没有有效输入数据，跳过")
-                errors += 1
-                continue
-            
-            # 构建提示词
-            prompt = create_prompt_from_input(input_data, evaluation_criteria)
-            
-            # 调用被评估模型
-            print(f"  [{idx+1}/{total_cases}] 调用评估LLM: {eval_model_name}")
-            model_output, response_time = call_llm_api(
-                eval_api_url, eval_api_key, prompt, 
-                eval_model_type, eval_max_tokens, eval_temperature, eval_timeout
-            )
-            
-            # 使用系统LLM进行评估
-            print(f"  [{idx+1}/{total_cases}] 调用系统LLM: {sys_model['name']}")
-            eval_result, sys_tokens, eval_process = evaluate_with_system_llm(
-                input_data, model_output, rule_config, 
-                sys_model['api_url'], sys_model['api_key'], sys_model['model_type'],
-                sys_model['timeout']
-            )
-            
-            # 保存评估结果
-            # 将evaluation_result转换为中文表述
-            if eval_result == 'passed':
-                eval_result_zh = '通过'
-            elif eval_result == 'failed':
-                eval_result_zh = '不通过'
-            else:
-                eval_result_zh = '未知'
-            
-            # 数据验证：检查评估结果数据完整性
-            if not eval_process:
-                logger.warning(f"评估过程记录为空，案例 #{idx}")
-                eval_process = "评估过程记录缺失"
-            
+        retry_count = 0
+        max_retries = 5
+        need_retry = True
+        
+        while need_retry and retry_count < max_retries:
             try:
-                cursor.execute("""
-                    INSERT INTO evaluation_results (task_id, case_index, input_data, expected_output, model_output,
-                                                   evaluation_result, details_text,
-                                                   evaluator_model, model_response_time, sys_tokens)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (task_id, idx, json.dumps(input_data, ensure_ascii=False),
-                      expected_field, model_output, eval_result_zh,
-                      eval_process, sys_model.get('name', 'Unknown'), response_time, sys_tokens))
+                # 准备输入数据
+                input_data = {field: str(row.get(field, '')) for field in input_fields if field in row}
                 
-                if eval_result == 'passed':
-                    passed += 1
-                elif eval_result == 'failed':
-                    failed += 1
-                else:
+                # 获取标准答案（违规标签）
+                primary_label = row.get(label_mapping['primary_label'], '') if label_mapping['primary_label'] else ''
+                secondary_label = row.get(label_mapping['secondary_label'], '') if label_mapping['secondary_label'] else ''
+                third_label = row.get(label_mapping['third_label'], '') if label_mapping['third_label'] else ''
+                
+                # 将违规标签添加到input_data中，确保评估器能够使用
+                if primary_label:
+                    input_data['primaryLabel'] = primary_label
+                if secondary_label:
+                    input_data['secondaryLabel'] = secondary_label
+                if third_label:
+                    input_data['thirdLabel'] = third_label
+                
+                # 构建违规标准（来自数据集的标注）
+                violation_criteria = ""
+                if primary_label:
+                    violation_criteria += f"主要违规类型: {primary_label};"
+                if secondary_label:
+                    violation_criteria += f"次要违规类型: {secondary_label};"
+                if third_label:
+                    violation_criteria += f"三级违规类型: {third_label};"
+                
+                if not input_data:
+                    print(f"警告: 第{idx}行没有有效输入数据，跳过")
                     errors += 1
+                    need_retry = False
+                    continue
                 
-                # 更新进度
-                progress = ((idx + 1) / total_cases) * 100
-                cursor.execute("""UPDATE evaluation_tasks SET progress_percent=?, 
-                                completed_cases=?, passed_cases=?, failed_cases=? WHERE id=?""",
-                              (int(progress), idx + 1, passed, failed, task_id))
-                conn.commit()
+                # 构建提示词
+                prompt = create_prompt_from_input(input_data, evaluation_criteria)
                 
-                logger.info(f"  [{idx+1}/{total_cases}] 完成: {eval_result_zh}, 消耗Token: {sys_tokens}")
+                # 调用被评估模型
+                print(f"  [{idx+1}/{total_cases}] 调用评估LLM: {eval_model_name}")
+                model_output, response_time = call_llm_api(
+                    eval_api_url, eval_api_key, prompt, 
+                    eval_model_type, eval_max_tokens, eval_temperature, eval_timeout
+                )
+                
+                # 使用系统LLM进行评估
+                print(f"  [{idx+1}/{total_cases}] 调用系统LLM: {sys_model['name']}")
+                eval_result, sys_tokens, eval_process = evaluate_with_system_llm(
+                    input_data, model_output, rule_config, 
+                    sys_model['api_url'], sys_model['api_key'], sys_model['model_type'],
+                    sys_model['timeout']
+                )
+                
+                # 保存评估结果
+                # 将evaluation_result转换为中文表述
+                if eval_result == 'passed':
+                    eval_result_zh = '通过'
+                elif eval_result == 'failed':
+                    eval_result_zh = '不通过'
+                else:
+                    eval_result_zh = '未知'
+                
+                # 数据验证：检查评估结果数据完整性
+                if not eval_process:
+                    logger.warning(f"评估过程记录为空，案例 #{idx}")
+                    eval_process = "评估过程记录缺失"
+                
+                try:
+                    cursor.execute("""
+                        INSERT INTO evaluation_results (task_id, case_index, input_data, expected_output, model_output,
+                                                       evaluation_result, details_text,
+                                                       evaluator_model, model_response_time, sys_tokens)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (task_id, idx, json.dumps(input_data, ensure_ascii=False),
+                          expected_field, model_output, eval_result_zh,
+                          eval_process, sys_model.get('name', 'Unknown'), response_time, sys_tokens))
+                    
+                    # 检查是否需要重新评估
+                    if "系统LLM评估异常" in eval_process:
+                        print(f"  [{idx+1}/{total_cases}] 检测到系统LLM评估异常，需要重新评估 (尝试 {retry_count+1}/{max_retries})")
+                        retry_count += 1
+                        # 继续循环，进行重新评估
+                        continue
+                    else:
+                        # 评估成功，不需要重新评估
+                        need_retry = False
+                        
+                        if eval_result == 'passed':
+                            passed += 1
+                        elif eval_result == 'failed':
+                            failed += 1
+                        else:
+                            errors += 1
+                        
+                        # 更新进度
+                        progress = ((idx + 1) / total_cases) * 100
+                        cursor.execute("""UPDATE evaluation_tasks SET progress_percent=?, 
+                                        completed_cases=?, passed_cases=?, failed_cases=? WHERE id=?""",
+                                      (int(progress), idx + 1, passed, failed, task_id))
+                        conn.commit()
+                        
+                        logger.info(f"  [{idx+1}/{total_cases}] 完成: {eval_result_zh}, 消耗Token: {sys_tokens}")
+                except Exception as e:
+                    errors += 1
+                    logger.error(f"  [{idx+1}/{total_cases}] 保存评估结果失败: {str(e)}")
+                    # 尝试保存错误记录
+                    try:
+                        cursor.execute("""
+                            INSERT INTO evaluation_results (task_id, case_index, evaluation_result, details_text)
+                            VALUES (?, ?, ?, ?)
+                        """, (task_id, idx, 'error', f"保存结果失败: {str(e)}"))
+                        conn.commit()
+                    except Exception as e2:
+                        logger.error(f"  [{idx+1}/{total_cases}] 保存错误记录也失败: {str(e2)}")
+                    need_retry = False
+                
             except Exception as e:
                 errors += 1
-                logger.error(f"  [{idx+1}/{total_cases}] 保存评估结果失败: {str(e)}")
-                # 尝试保存错误记录
+                logger.error(f"  [{idx+1}/{total_cases}] 错误: {str(e)}")
                 try:
                     cursor.execute("""
                         INSERT INTO evaluation_results (task_id, case_index, evaluation_result, details_text)
                         VALUES (?, ?, ?, ?)
-                    """, (task_id, idx, 'error', f"保存结果失败: {str(e)}"))
+                    """, (task_id, idx, 'error', str(e)))
                     conn.commit()
                 except Exception as e2:
-                    logger.error(f"  [{idx+1}/{total_cases}] 保存错误记录也失败: {str(e2)}")
-            
-        except Exception as e:
+                    logger.error(f"  [{idx+1}/{total_cases}] 保存错误记录失败: {str(e2)}")
+                need_retry = False
+        
+        # 达到最大重试次数
+        if retry_count >= max_retries:
+            print(f"  [{idx+1}/{total_cases}] 达到最大重试次数 ({max_retries})，停止重新评估")
             errors += 1
-            logger.error(f"  [{idx+1}/{total_cases}] 错误: {str(e)}")
-            try:
-                cursor.execute("""
-                    INSERT INTO evaluation_results (task_id, case_index, evaluation_result, details_text)
-                    VALUES (?, ?, ?, ?)
-                """, (task_id, idx, 'error', str(e)))
-                conn.commit()
-            except Exception as e2:
-                logger.error(f"  [{idx+1}/{total_cases}] 保存错误记录失败: {str(e2)}")
     
     # 生成报告
     logger.info("生成评估报告")
@@ -1086,37 +1117,55 @@ def generate_evaluation_report(task_id: int, cursor, include_all=True) -> str:
     include_all: 是否包含所有记录，False表示只包含失败记录
     """
     report_type = "full" if include_all else "failed"
-    report_path = f"g:\llmsafe0403\aiev\reports\evaluation_report_{task_id}_{report_type}.pdf"
-    os.makedirs(r'g:\llmsafe0403\aiev\reports', exist_ok=True)
+    # 使用相对路径，确保路径格式正确
+    report_path = f"reports/evaluation_report_{task_id}_{report_type}.pdf"
+    os.makedirs('reports', exist_ok=True)
     
     # 生成PDF报告
     try:
         pdf = FPDF()
         pdf.add_page()
         
-        # 设置页边距
+        # 设置页边距（恢复到15mm，确保页面美观）
         pdf.set_margins(15, 15, 15)
         
-        # 添加中文字体支持 - 使用NotoSansSC (思源黑体)
-        font_path = r"C:\Windows\Fonts\NotoSansSC-VF.ttf"
-        if not os.path.exists(font_path):
-            raise Exception(f"中文字体不存在: {font_path}")
-        
-        pdf.add_font("NotoSansSC", "", font_path, uni=True)
-        pdf.set_font("NotoSansSC", size=12)
+        # 尝试添加中文字体支持
+        font_loaded = False
+        try:
+            # 尝试使用系统中的中文字体
+            font_path = "C:/Windows/Fonts/simsun.ttc"  # 宋体
+            if os.path.exists(font_path):
+                print(f"使用系统字体: {font_path}")
+                pdf.add_font("SimSun", "", font_path, uni=True)
+                pdf.set_font("SimSun", size=10)
+                font_loaded = True
+                print("系统字体加载成功")
+            else:
+                # 如果没有中文字体，使用默认字体
+                print("没有找到中文字体，使用默认字体")
+                pdf.set_font("Helvetica", size=10)
+        except Exception as e:
+            # 如果字体添加失败，使用默认字体
+            print(f"字体加载失败: {str(e)}")
+            pdf.set_font("Helvetica", size=10)
         
         # 使用中文标题
         if include_all:
-            pdf.cell(0, 10, txt="智能大模型安全评估报告（全量）", ln=True, align="C")
+            pdf.multi_cell(0, 10, text="智能大模型安全评估报告", align="C")
+            pdf.multi_cell(0, 10, text="（全量）", align="C")
         else:
-            pdf.cell(0, 10, txt="智能大模型安全评估报告（不合格记录）", ln=True, align="C")
-        pdf.cell(0, 10, txt=f"任务ID: {task_id}", ln=True, align="C")
-        pdf.cell(0, 10, txt=f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align="C")
+            pdf.multi_cell(0, 10, text="智能大模型安全评估报告", align="C")
+            pdf.multi_cell(0, 10, text="（不合格记录）", align="C")
+        pdf.multi_cell(0, 10, text=f"任务ID: {task_id}", align="C")
+        pdf.multi_cell(0, 10, text=f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", align="C")
         pdf.ln(10)
         
         # 统计信息
-        pdf.set_font("NotoSansSC", size=11, style='B')
-        pdf.cell(0, 8, txt="评估统计信息", ln=True)
+        if font_loaded:
+            pdf.set_font("Chinese", size=12)
+        else:
+            pdf.set_font("Helvetica", size=11, style='B')
+        pdf.multi_cell(0, 8, text="评估统计信息")
         pdf.ln(5)
         
         # 获取总统计
@@ -1133,16 +1182,19 @@ def generate_evaluation_report(task_id: int, cursor, include_all=True) -> str:
         failed_count = total_stats[2] if total_stats else 0
         pass_rate = (passed_count / total_count * 100) if total_count > 0 else 0
         
-        pdf.set_font("NotoSansSC", size=10)
-        pdf.cell(0, 6, txt=f"总记录数: {total_count}", ln=True)
-        pdf.cell(0, 6, txt=f"通过数: {passed_count}", ln=True)
-        pdf.cell(0, 6, txt=f"不通过数: {failed_count}", ln=True)
-        pdf.cell(0, 6, txt=f"通过占比: {pass_rate:.2f}%", ln=True)
+        pdf.set_font("Chinese" if font_loaded else "Helvetica", size=10)
+        pdf.multi_cell(0, 6, text=f"总记录数: {total_count}")
+        pdf.multi_cell(0, 6, text=f"通过数: {passed_count}")
+        pdf.multi_cell(0, 6, text=f"不通过数: {failed_count}")
+        pdf.multi_cell(0, 6, text=f"通过占比: {pass_rate:.2f}%")
         pdf.ln(10)
         
         # 获取类别统计
-        pdf.set_font("NotoSansSC", size=11, style='B')
-        pdf.cell(0, 8, txt="类别统计信息", ln=True)
+        if font_loaded:
+            pdf.set_font("Chinese", size=12)
+        else:
+            pdf.set_font("Helvetica", size=11, style='B')
+        pdf.multi_cell(0, 8, text="类别统计信息")
         pdf.ln(5)
         
         # 尝试从输入数据中提取类别信息
@@ -1180,15 +1232,15 @@ def generate_evaluation_report(task_id: int, cursor, include_all=True) -> str:
                     pass
         
         # 显示类别统计
-        pdf.set_font("NotoSansSC", size=9)
+        pdf.set_font("Chinese" if font_loaded else "Helvetica", size=9)
         for category, stats in category_stats.items():
             cat_total = stats['total']
             cat_passed = stats['passed']
             cat_failed = stats['failed']
             cat_pass_rate = (cat_passed / cat_total * 100) if cat_total > 0 else 0
             
-            pdf.cell(0, 6, txt=f"类别: {category}", ln=True)
-            pdf.cell(0, 6, txt=f"  总数: {cat_total}, 通过: {cat_passed}, 不通过: {cat_failed}, 通过占比: {cat_pass_rate:.2f}%", ln=True)
+            pdf.multi_cell(0, 6, text=f"类别: {category}")
+            pdf.multi_cell(0, 6, text=f"  总数: {cat_total}, 通过: {cat_passed}, 不通过: {cat_failed}, 通过占比: {cat_pass_rate:.2f}%")
         
         pdf.ln(15)
         
@@ -1201,66 +1253,60 @@ def generate_evaluation_report(task_id: int, cursor, include_all=True) -> str:
         results = cursor.fetchall()
         
         # 添加评估结果
-        pdf.set_font("NotoSansSC", size=11, style='B')
-        pdf.cell(0, 8, txt="评估详情", ln=True)
+        if font_loaded:
+            pdf.set_font("Chinese", size=12)
+        else:
+            pdf.set_font("Helvetica", size=11, style='B')
+        pdf.multi_cell(0, 8, text="评估详情")
         pdf.ln(5)
         
-        pdf.set_font("NotoSansSC", size=9)
+        # 设置表格宽度
+        page_width = pdf.w - 30  # 减去左右边距（15mm * 2）
+        col_widths = [30, 100]  # 两列布局，进一步减少每行字数，确保有足够空间
+        
+        pdf.set_font("Chinese" if font_loaded else "Helvetica", size=12)
         
         for idx, result in enumerate(results, 1):
             # 检查页面空间
-            if pdf.get_y() > 250:
+            if pdf.get_y() > 240:
                 pdf.add_page()
                 pdf.set_margins(15, 15, 15)
-                pdf.set_font("NotoSansSC", size=9)
+                pdf.set_font("Chinese" if font_loaded else "Helvetica", size=12)
             
-            pdf.cell(0, 6, txt=f"案例 #{result[2] + 1}", ln=True)
-            pdf.cell(0, 6, txt=f"评估结果: {result[6]}", ln=True)
+            # 案例标题
+            pdf.set_font("Chinese" if font_loaded else "Helvetica", size=12, style='B')
+            pdf.multi_cell(0, 8, text=f"案例 #{result[2] + 1}")
+            pdf.set_font("Chinese" if font_loaded else "Helvetica", size=12)
             
-            # 显示输入数据
-            pdf.cell(0, 6, txt="输入数据:", ln=True)
+            # 创建表格
+            # 评估结果行
+            pdf.cell(col_widths[0], 6, text="评估结果:")
+            pdf.cell(col_widths[1], 6, text=result[5])
+            pdf.ln()
+            
+            # 输入数据行
+            pdf.cell(col_widths[0], 6, text="输入数据:")
             input_data = json.loads(result[3]) if result[3] else {}
+            input_text = ""
             for key, value in input_data.items():
                 if key not in ['primaryLabel', 'secondaryLabel', 'thirdLabel']:
-                    # 处理长文本，自动换行
-                    if len(f"  - {key}: {value}") > 180:
-                        # 截断过长的文本
-                        display_value = value[:150] + "..." if len(value) > 150 else value
-                        pdf.cell(0, 6, txt=f"  - {key}: {display_value}", ln=True)
-                    else:
-                        pdf.cell(0, 6, txt=f"  - {key}: {value}", ln=True)
+                    input_text += f"{key}: {value}; "
+            input_text = input_text[:-2] if input_text else "无"
+            # 使用multi_cell处理长文本
+            pdf.multi_cell(col_widths[1], 6, text=input_text)
+            pdf.ln(2)
             
-            # 显示模型输出
-            if result[5]:
-                pdf.cell(0, 6, txt="模型输出:", ln=True)
-                # 分段显示长文本
-                model_output_lines = result[5].split('\n')
-                for line in model_output_lines:
-                    if line.strip():
-                        # 处理长文本，自动换行
-                        if len(f"  {line}") > 180:
-                            # 截断过长的文本
-                            display_line = line[:170] + "..." if len(line) > 170 else line
-                            pdf.cell(0, 6, txt=f"  {display_line}", ln=True)
-                        else:
-                            pdf.cell(0, 6, txt=f"  {line}", ln=True)
+            # 模型输出行
+            pdf.cell(col_widths[0], 6, text="模型输出:")
+            model_output = result[4] if result[4] else "无"
+            pdf.multi_cell(col_widths[1], 6, text=model_output)
+            pdf.ln(2)
             
-            # 显示评估过程
-            if result[9]:
-                pdf.cell(0, 6, txt="评估过程:", ln=True)
-                # 分段显示长文本
-                details_lines = result[9].split('\n')
-                for line in details_lines:
-                    if line.strip():
-                        # 处理长文本，自动换行
-                        if len(f"  {line}") > 180:
-                            # 截断过长的文本
-                            display_line = line[:170] + "..." if len(line) > 170 else line
-                            pdf.cell(0, 6, txt=f"  {display_line}", ln=True)
-                        else:
-                            pdf.cell(0, 6, txt=f"  {line}", ln=True)
-            
-            pdf.ln(8)
+            # 评估过程行
+            pdf.cell(col_widths[0], 6, text="评估过程:")
+            details = result[6] if result[6] else "无"
+            pdf.multi_cell(col_widths[1], 6, text=details)
+            pdf.ln(10)
         
         # 保存PDF
         pdf.output(report_path)
@@ -1271,17 +1317,467 @@ def generate_evaluation_report(task_id: int, cursor, include_all=True) -> str:
 
 def generate_full_pdf_report(task_id: int, cursor) -> str:
     """生成全量PDF报告"""
-    return generate_evaluation_report(task_id, cursor, include_all=True)
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    import os
+    from datetime import datetime
+    import json
+    
+    report_path = f"reports/evaluation_report_{task_id}_full.pdf"
+    os.makedirs('reports', exist_ok=True)
+    
+    try:
+        # 创建PDF文档
+        doc = SimpleDocTemplate(report_path, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+        elements = []
+        
+        # 获取样式表
+        styles = getSampleStyleSheet()
+        
+        # 创建中文字体样式
+        try:
+            # 尝试使用系统中的中文字体
+            font_path = "C:/Windows/Fonts/simsun.ttc"  # 宋体
+            if os.path.exists(font_path):
+                print(f"使用系统字体: {font_path}")
+                # 注册中文字体
+                from reportlab.pdfbase import pdfmetrics
+                from reportlab.pdfbase.ttfonts import TTFont
+                # 注册宋体字体，确保正确处理中文字符
+                pdfmetrics.registerFont(TTFont('SimSun', font_path))
+                # 也注册黑体作为备选
+                heiti_path = "C:/Windows/Fonts/simhei.ttf"
+                if os.path.exists(heiti_path):
+                    pdfmetrics.registerFont(TTFont('SimHei', heiti_path))
+                
+                # 创建中文字体样式
+                normal_style = ParagraphStyle(
+                    'Normal',
+                    fontName='SimSun',
+                    fontSize=10,
+                    leading=12,
+                    alignment=TA_LEFT,
+                    wordWrap='CJK'  # 启用中文自动换行
+                )
+                heading_style = ParagraphStyle(
+                    'Heading1',
+                    fontName='SimSun',
+                    fontSize=14,
+                    leading=16,
+                    alignment=TA_CENTER,
+                    spaceAfter=10
+                )
+                subheading_style = ParagraphStyle(
+                    'Heading2',
+                    fontName='SimSun',
+                    fontSize=12,
+                    leading=14,
+                    alignment=TA_LEFT,
+                    spaceAfter=5,
+                    spaceBefore=5
+                )
+                font_loaded = True
+                print("系统字体加载成功")
+            else:
+                # 使用默认字体
+                print("没有找到中文字体，使用默认字体")
+                normal_style = styles['Normal']
+                heading_style = styles['Heading1']
+                subheading_style = styles['Heading2']
+                font_loaded = False
+        except Exception as e:
+            # 使用默认字体
+            print(f"字体加载失败: {str(e)}")
+            normal_style = styles['Normal']
+            heading_style = styles['Heading1']
+            subheading_style = styles['Heading2']
+            font_loaded = False
+        
+        # 添加标题
+        elements.append(Paragraph("智能大模型安全评估报告", heading_style))
+        elements.append(Paragraph("（全量）", heading_style))
+        
+        # 添加任务信息
+        elements.append(Paragraph(f"任务ID: {task_id}", normal_style))
+        elements.append(Paragraph(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+        elements.append(Spacer(1, 10*mm))
+        
+        # 统计信息
+        elements.append(Paragraph("评估统计信息", subheading_style))
+        
+        # 获取总统计
+        cursor.execute("""
+            SELECT COUNT(*), 
+                   SUM(CASE WHEN evaluation_result = '通过' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN evaluation_result = '不通过' THEN 1 ELSE 0 END)
+            FROM evaluation_results 
+            WHERE task_id = ?
+        """, (task_id,))
+        total_stats = cursor.fetchone()
+        total_count = total_stats[0] if total_stats else 0
+        passed_count = total_stats[1] if total_stats else 0
+        failed_count = total_stats[2] if total_stats else 0
+        pass_rate = (passed_count / total_count * 100) if total_count > 0 else 0
+        
+        elements.append(Paragraph(f"总记录数: {total_count}", normal_style))
+        elements.append(Paragraph(f"通过数: {passed_count}", normal_style))
+        elements.append(Paragraph(f"不通过数: {failed_count}", normal_style))
+        elements.append(Paragraph(f"通过占比: {pass_rate:.2f}%", normal_style))
+        elements.append(Spacer(1, 10*mm))
+        
+        # 获取类别统计
+        elements.append(Paragraph("类别统计信息", subheading_style))
+        
+        # 尝试从输入数据中提取类别信息
+        cursor.execute("SELECT input_data FROM evaluation_results WHERE task_id = ?", (task_id,))
+        input_data_list = cursor.fetchall()
+        
+        # 统计类别
+        category_stats = {}
+        for input_data_str in input_data_list:
+            if input_data_str[0]:
+                try:
+                    input_data = json.loads(input_data_str[0])
+                    category = input_data.get('type', '未分类')
+                    if category not in category_stats:
+                        category_stats[category] = {'total': 0, 'passed': 0, 'failed': 0}
+                    category_stats[category]['total'] += 1
+                except:
+                    pass
+        
+        # 统计每个类别的通过/不通过情况
+        cursor.execute("SELECT input_data, evaluation_result FROM evaluation_results WHERE task_id = ?", (task_id,))
+        category_results = cursor.fetchall()
+        
+        for input_data_str, eval_result in category_results:
+            if input_data_str:
+                try:
+                    input_data = json.loads(input_data_str)
+                    category = input_data.get('type', '未分类')
+                    if category in category_stats:
+                        if eval_result == '通过':
+                            category_stats[category]['passed'] += 1
+                        elif eval_result == '不通过':
+                            category_stats[category]['failed'] += 1
+                except:
+                    pass
+        
+        # 显示类别统计
+        for category, stats in category_stats.items():
+            cat_total = stats['total']
+            cat_passed = stats['passed']
+            cat_failed = stats['failed']
+            cat_pass_rate = (cat_passed / cat_total * 100) if cat_total > 0 else 0
+            elements.append(Paragraph(f"类别: {category}", normal_style))
+            elements.append(Paragraph(f"  总数: {cat_total}, 通过: {cat_passed}, 不通过: {cat_failed}, 通过占比: {cat_pass_rate:.2f}%", normal_style))
+        
+        elements.append(Spacer(1, 15*mm))
+        
+        # 查询评估结果
+        cursor.execute("SELECT * FROM evaluation_results WHERE task_id = ? ORDER BY case_index", (task_id,))
+        results = cursor.fetchall()
+        
+        # 添加评估结果
+        elements.append(Paragraph("评估详情", subheading_style))
+        
+        # 为每个结果创建表格
+        for idx, result in enumerate(results, 1):
+            elements.append(Paragraph(f"案例 #{result[2] + 1}", subheading_style))
+            
+            # 准备表格数据
+            data = []
+            
+            # 评估结果行
+            data.append(['评估结果:', result[5]])
+            
+            # 输入数据行
+            input_data = json.loads(result[3]) if result[3] else {}
+            input_text = ""
+            for key, value in input_data.items():
+                if key not in ['primaryLabel', 'secondaryLabel', 'thirdLabel']:
+                    input_text += f"{key}: {value}; "
+            input_text = input_text[:-2] if input_text else "无"
+            data.append(['输入数据:', input_text])
+            
+            # 模型输出行
+            model_output = result[4] if result[4] else "无"
+            data.append(['模型输出:', model_output])
+            
+            # 评估过程行
+            details = result[6] if result[6] else "无"
+            data.append(['评估过程:', details])
+            
+            # 计算表格宽度，确保左右各预留15mm空白
+            page_width = A4[0] - 30*mm  # A4宽度减去左右各15mm
+            col_widths = [80, page_width - 80]  # 第一列80mm，第二列占据剩余空间
+            
+            # 将数据转换为Paragraph对象，确保中文字体正确应用
+            table_data = []
+            for row in data:
+                table_row = []
+                for cell in row:
+                    # 为每个单元格创建Paragraph对象，确保使用正确的中文字体
+                    table_row.append(Paragraph(str(cell), normal_style))
+                table_data.append(table_row)
+            
+            table = Table(table_data, colWidths=col_widths)
+            
+            # 设置表格样式
+            table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ]))
+            
+            elements.append(table)
+            elements.append(Spacer(1, 10*mm))
+        
+        # 生成PDF
+        doc.build(elements)
+        return report_path
+    except Exception as e:
+        logger.error(f"生成PDF报告失败: {str(e)}")
+        raise Exception(f"PDF报告生成失败，需要中文字体支持: {str(e)}")
 
 def generate_failed_pdf_report(task_id: int, cursor) -> str:
     """生成不合格记录PDF报告"""
-    return generate_evaluation_report(task_id, cursor, include_all=False)
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    import os
+    from datetime import datetime
+    import json
+    
+    report_path = f"reports/evaluation_report_{task_id}_failed.pdf"
+    os.makedirs('reports', exist_ok=True)
+    
+    try:
+        # 创建PDF文档
+        doc = SimpleDocTemplate(report_path, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+        elements = []
+        
+        # 获取样式表
+        styles = getSampleStyleSheet()
+        
+        # 创建中文字体样式
+        try:
+            # 尝试使用系统中的中文字体
+            font_path = "C:/Windows/Fonts/simsun.ttc"  # 宋体
+            if os.path.exists(font_path):
+                print(f"使用系统字体: {font_path}")
+                # 注册中文字体
+                from reportlab.pdfbase import pdfmetrics
+                from reportlab.pdfbase.ttfonts import TTFont
+                # 注册宋体字体，确保正确处理中文字符
+                pdfmetrics.registerFont(TTFont('SimSun', font_path))
+                # 也注册黑体作为备选
+                heiti_path = "C:/Windows/Fonts/simhei.ttf"
+                if os.path.exists(heiti_path):
+                    pdfmetrics.registerFont(TTFont('SimHei', heiti_path))
+                
+                # 创建中文字体样式
+                normal_style = ParagraphStyle(
+                    'Normal',
+                    fontName='SimSun',
+                    fontSize=10,
+                    leading=12,
+                    alignment=TA_LEFT,
+                    wordWrap='CJK'  # 启用中文自动换行
+                )
+                heading_style = ParagraphStyle(
+                    'Heading1',
+                    fontName='SimSun',
+                    fontSize=14,
+                    leading=16,
+                    alignment=TA_CENTER,
+                    spaceAfter=10
+                )
+                subheading_style = ParagraphStyle(
+                    'Heading2',
+                    fontName='SimSun',
+                    fontSize=12,
+                    leading=14,
+                    alignment=TA_LEFT,
+                    spaceAfter=5,
+                    spaceBefore=5
+                )
+                font_loaded = True
+                print("系统字体加载成功")
+            else:
+                # 使用默认字体
+                print("没有找到中文字体，使用默认字体")
+                normal_style = styles['Normal']
+                heading_style = styles['Heading1']
+                subheading_style = styles['Heading2']
+                font_loaded = False
+        except Exception as e:
+            # 使用默认字体
+            print(f"字体加载失败: {str(e)}")
+            normal_style = styles['Normal']
+            heading_style = styles['Heading1']
+            subheading_style = styles['Heading2']
+            font_loaded = False
+        
+        # 添加标题
+        elements.append(Paragraph("智能大模型安全评估报告", heading_style))
+        elements.append(Paragraph("（不合格记录）", heading_style))
+        
+        # 添加任务信息
+        elements.append(Paragraph(f"任务ID: {task_id}", normal_style))
+        elements.append(Paragraph(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+        elements.append(Spacer(1, 10*mm))
+        
+        # 统计信息
+        elements.append(Paragraph("评估统计信息", subheading_style))
+        
+        # 获取总统计
+        cursor.execute("""
+            SELECT COUNT(*), 
+                   SUM(CASE WHEN evaluation_result = '通过' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN evaluation_result = '不通过' THEN 1 ELSE 0 END)
+            FROM evaluation_results 
+            WHERE task_id = ?
+        """, (task_id,))
+        total_stats = cursor.fetchone()
+        total_count = total_stats[0] if total_stats else 0
+        passed_count = total_stats[1] if total_stats else 0
+        failed_count = total_stats[2] if total_stats else 0
+        pass_rate = (passed_count / total_count * 100) if total_count > 0 else 0
+        
+        elements.append(Paragraph(f"总记录数: {total_count}", normal_style))
+        elements.append(Paragraph(f"通过数: {passed_count}", normal_style))
+        elements.append(Paragraph(f"不通过数: {failed_count}", normal_style))
+        elements.append(Paragraph(f"通过占比: {pass_rate:.2f}%", normal_style))
+        elements.append(Spacer(1, 10*mm))
+        
+        # 获取类别统计
+        elements.append(Paragraph("类别统计信息", subheading_style))
+        
+        # 尝试从输入数据中提取类别信息
+        cursor.execute("SELECT input_data FROM evaluation_results WHERE task_id = ?", (task_id,))
+        input_data_list = cursor.fetchall()
+        
+        # 统计类别
+        category_stats = {}
+        for input_data_str in input_data_list:
+            if input_data_str[0]:
+                try:
+                    input_data = json.loads(input_data_str[0])
+                    category = input_data.get('type', '未分类')
+                    if category not in category_stats:
+                        category_stats[category] = {'total': 0, 'passed': 0, 'failed': 0}
+                    category_stats[category]['total'] += 1
+                except:
+                    pass
+        
+        # 统计每个类别的通过/不通过情况
+        cursor.execute("SELECT input_data, evaluation_result FROM evaluation_results WHERE task_id = ?", (task_id,))
+        category_results = cursor.fetchall()
+        
+        for input_data_str, eval_result in category_results:
+            if input_data_str:
+                try:
+                    input_data = json.loads(input_data_str)
+                    category = input_data.get('type', '未分类')
+                    if category in category_stats:
+                        if eval_result == '通过':
+                            category_stats[category]['passed'] += 1
+                        elif eval_result == '不通过':
+                            category_stats[category]['failed'] += 1
+                except:
+                    pass
+        
+        # 显示类别统计
+        for category, stats in category_stats.items():
+            cat_total = stats['total']
+            cat_passed = stats['passed']
+            cat_failed = stats['failed']
+            cat_pass_rate = (cat_passed / cat_total * 100) if cat_total > 0 else 0
+            elements.append(Paragraph(f"类别: {category}", normal_style))
+            elements.append(Paragraph(f"  总数: {cat_total}, 通过: {cat_passed}, 不通过: {cat_failed}, 通过占比: {cat_pass_rate:.2f}%", normal_style))
+        
+        elements.append(Spacer(1, 15*mm))
+        
+        # 查询评估结果
+        cursor.execute("SELECT * FROM evaluation_results WHERE task_id = ? AND evaluation_result = '不通过' ORDER BY case_index", (task_id,))
+        results = cursor.fetchall()
+        
+        # 添加评估结果
+        elements.append(Paragraph("评估详情", subheading_style))
+        
+        # 为每个结果创建表格
+        for idx, result in enumerate(results, 1):
+            elements.append(Paragraph(f"案例 #{result[2] + 1}", subheading_style))
+            
+            # 准备表格数据
+            data = []
+            
+            # 评估结果行
+            data.append(['评估结果:', result[5]])
+            
+            # 输入数据行
+            input_data = json.loads(result[3]) if result[3] else {}
+            input_text = ""
+            for key, value in input_data.items():
+                if key not in ['primaryLabel', 'secondaryLabel', 'thirdLabel']:
+                    input_text += f"{key}: {value}; "
+            input_text = input_text[:-2] if input_text else "无"
+            data.append(['输入数据:', input_text])
+            
+            # 模型输出行
+            model_output = result[4] if result[4] else "无"
+            data.append(['模型输出:', model_output])
+            
+            # 评估过程行
+            details = result[6] if result[6] else "无"
+            data.append(['评估过程:', details])
+            
+            # 计算表格宽度，确保左右各预留15mm空白
+            page_width = A4[0] - 30*mm  # A4宽度减去左右各15mm
+            col_widths = [80, page_width - 80]  # 第一列80mm，第二列占据剩余空间
+            
+            # 将数据转换为Paragraph对象，确保中文字体正确应用
+            table_data = []
+            for row in data:
+                table_row = []
+                for cell in row:
+                    # 为每个单元格创建Paragraph对象，确保使用正确的中文字体
+                    table_row.append(Paragraph(str(cell), normal_style))
+                table_data.append(table_row)
+            
+            table = Table(table_data, colWidths=col_widths)
+            
+            # 设置表格样式
+            table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ]))
+            
+            elements.append(table)
+            elements.append(Spacer(1, 10*mm))
+        
+        # 生成PDF
+        doc.build(elements)
+        return report_path
+    except Exception as e:
+        logger.error(f"生成PDF报告失败: {str(e)}")
+        raise Exception(f"PDF报告生成失败，需要中文字体支持: {str(e)}")
 
 def generate_full_json_report(task_id: int, cursor) -> str:
     """生成全量JSON报告"""
     # 实现全量JSON报告生成逻辑
-    report_path = f"g:\llmsafe0403\aiev\reports\full_report_{task_id}.json"
-    os.makedirs(r'g:\llmsafe0403\aiev\reports', exist_ok=True)
+    report_path = f"reports/full_report_{task_id}.json"
+    os.makedirs('reports', exist_ok=True)
     
     # 获取评估结果
     cursor.execute("SELECT * FROM evaluation_results WHERE task_id = ?", (task_id,))
@@ -1328,12 +1824,10 @@ def generate_full_json_report(task_id: int, cursor) -> str:
         item = {
             "case_index": result[2] + 1,
             "input_data": json.loads(result[3]) if result[3] else {},
-            "model_output": result[5],
-            "evaluation_result": result[6],
-            "details_text": result[9],
-            "evaluator_model": result[10],
-            "model_response_time": result[11],
-            "sys_tokens": result[14]
+            "model_output": result[4],
+            "evaluation_result": result[5],
+            "details_text": result[6],
+            "model_response_time": result[7]
         }
         # 如果expected_output不为空，则添加该字段
         if result[4]:
@@ -1353,8 +1847,8 @@ def generate_full_json_report(task_id: int, cursor) -> str:
 def generate_failed_json_report(task_id: int, cursor) -> str:
     """生成未通过评估报告"""
     # 实现未通过评估报告生成逻辑
-    report_path = f"g:\llmsafe0403\aiev\reports\failed_report_{task_id}.json"
-    os.makedirs(r'g:\llmsafe0403\aiev\reports', exist_ok=True)
+    report_path = f"reports/failed_report_{task_id}.json"
+    os.makedirs('reports', exist_ok=True)
     
     # 获取未通过的评估结果
     cursor.execute("SELECT * FROM evaluation_results WHERE task_id = ? AND evaluation_result = '不通过'", (task_id,))
@@ -1391,11 +1885,10 @@ def generate_failed_json_report(task_id: int, cursor) -> str:
         item = {
             "case_index": result[2] + 1,
             "input_data": json.loads(result[3]) if result[3] else {},
-            "model_output": result[5],
-            "evaluation_result": result[6],
-            "details_text": result[9],
-            "model_response_time": result[11],
-            "sys_tokens": result[14]
+            "model_output": result[4],
+            "evaluation_result": result[5],
+            "details_text": result[6],
+            "model_response_time": result[7]
         }
         # 如果expected_output不为空，则添加该字段
         if result[4]:
@@ -1978,9 +2471,13 @@ async def get_tasks(current_user = Depends(get_current_user)):
     cursor.execute("""
         SELECT t.id, t.name, t.status, t.progress_percent, t.total_cases, t.completed_cases,
                t.passed_cases, t.failed_cases, COALESCE(t.error_count, 0), t.start_time, t.end_time,
-               t.result_summary, m.name as model_name, d.name as dataset_name, r.name as rule_name
+               t.result_summary, 
+               CASE 
+                   WHEN t.model_category = 'system' THEN (SELECT name FROM system_llms WHERE id = t.model_id)
+                   ELSE (SELECT name FROM evaluation_llms WHERE id = t.model_id)
+               END as model_name,
+               d.name as dataset_name, r.name as rule_name
         FROM evaluation_tasks t
-        LEFT JOIN (SELECT id, name FROM system_llms UNION SELECT id, name FROM evaluation_llms) m ON t.model_id = m.id
         LEFT JOIN datasets d ON t.dataset_id = d.id
         LEFT JOIN evaluation_rules r ON t.rule_id = r.id
         ORDER BY t.id DESC
@@ -2051,7 +2548,7 @@ async def create_task(task: EvaluationTaskCreate, current_user = Depends(get_cur
         return {
             "id": task_id,
             "name": task.name,
-            "message": "评估任务创建成功"
+            "message": "评估任务创建成功，请点击启动按钮开始执行"
         }
     except Exception as e:
         conn.rollback()
@@ -2086,9 +2583,13 @@ async def get_task(task_id: int, current_user = Depends(get_current_user)):
     cursor.execute("""
         SELECT t.id, t.name, t.status, t.progress_percent, t.total_cases, t.completed_cases,
                t.passed_cases, t.failed_cases, COALESCE(t.error_count, 0), t.start_time, t.end_time,
-               t.result_summary, m.name as model_name, d.name as dataset_name, r.name as rule_name
+               t.result_summary, 
+               CASE 
+                   WHEN t.model_category = 'system' THEN (SELECT name FROM system_llms WHERE id = t.model_id)
+                   ELSE (SELECT name FROM evaluation_llms WHERE id = t.model_id)
+               END as model_name,
+               d.name as dataset_name, r.name as rule_name
         FROM evaluation_tasks t
-        LEFT JOIN (SELECT id, name FROM system_llms UNION SELECT id, name FROM evaluation_llms) m ON t.model_id = m.id
         LEFT JOIN datasets d ON t.dataset_id = d.id
         LEFT JOIN evaluation_rules r ON t.rule_id = r.id
         WHERE t.id = ?
@@ -2117,6 +2618,59 @@ async def get_task(task_id: int, current_user = Depends(get_current_user)):
         "rule_name": task[14]
     }
 
+@app.post("/api/tasks/{task_id}/start")
+async def start_task(task_id: int, current_user = Depends(get_current_user)):
+    """启动评估任务"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # 检查任务是否存在
+        cursor.execute("SELECT status FROM evaluation_tasks WHERE id = ?", (task_id,))
+        task = cursor.fetchone()
+        if not task:
+            conn.close()
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 更新任务状态为运行中
+        cursor.execute("UPDATE evaluation_tasks SET status = 'running', start_time = CURRENT_TIMESTAMP WHERE id = ?", (task_id,))
+        conn.commit()
+        
+        # 将任务加入评估队列
+        evaluation_queue.put(task_id)
+        
+        return {"message": "任务已启动"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post("/api/tasks/{task_id}/pause")
+async def pause_task(task_id: int, current_user = Depends(get_current_user)):
+    """暂停评估任务"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # 检查任务是否存在
+        cursor.execute("SELECT status FROM evaluation_tasks WHERE id = ?", (task_id,))
+        task = cursor.fetchone()
+        if not task:
+            conn.close()
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 更新任务状态为暂停
+        cursor.execute("UPDATE evaluation_tasks SET status = 'paused' WHERE id = ?", (task_id,))
+        conn.commit()
+        
+        return {"message": "任务已暂停"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
 # ==================== 评估结果API接口 ====================
 @app.get("/api/tasks/{task_id}/results")
 async def get_task_results(task_id: int, current_user = Depends(get_current_user)):
@@ -2124,7 +2678,7 @@ async def get_task_results(task_id: int, current_user = Depends(get_current_user
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, case_index, evaluation_result, model_response_time, created_at
+        SELECT id, case_index, input_data, model_output, evaluation_result, details_text, model_response_time, created_at
         FROM evaluation_results
         WHERE task_id = ?
         ORDER BY case_index
@@ -2134,7 +2688,92 @@ async def get_task_results(task_id: int, current_user = Depends(get_current_user
     return [{
         "id": r[0],
         "case_index": r[1],
-        "evaluation_result": r[2],
-        "model_response_time": r[3],
-        "created_at": r[4]
+        "input_data": json.loads(r[2]) if r[2] else {},
+        "model_output": r[3],
+        "evaluation_result": r[4],
+        "details_text": r[5],
+        "model_response_time": r[6],
+        "created_at": r[7]
     } for r in results]
+
+# ==================== 报告下载API接口 ====================
+
+@app.get("/api/tasks/{task_id}/download/full_pdf")
+async def download_full_pdf(task_id: int, current_user = Depends(get_current_user)):
+    """下载全量PDF报告"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT full_pdf_path FROM evaluation_tasks WHERE id = ?", (task_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    
+    file_path = result[0]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="报告文件不存在")
+    
+    return FileResponse(file_path, media_type="application/pdf")
+
+@app.get("/api/tasks/{task_id}/download/failed_pdf")
+async def download_failed_pdf(task_id: int, current_user = Depends(get_current_user)):
+    """下载不合格记录PDF报告"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT failed_pdf_path FROM evaluation_tasks WHERE id = ?", (task_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    
+    file_path = result[0]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="报告文件不存在")
+    
+    return FileResponse(file_path, media_type="application/pdf")
+
+@app.get("/api/tasks/{task_id}/download/full_json")
+async def download_full_json(task_id: int, current_user = Depends(get_current_user)):
+    """下载全量JSON报告"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT full_report_file_path FROM evaluation_tasks WHERE id = ?", (task_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    
+    file_path = result[0]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="报告文件不存在")
+    
+    return FileResponse(file_path, media_type="application/json")
+
+@app.get("/api/tasks/{task_id}/download/failed_json")
+async def download_failed_json(task_id: int, current_user = Depends(get_current_user)):
+    """下载未通过JSON报告"""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT failed_report_file_path FROM evaluation_tasks WHERE id = ?", (task_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    
+    file_path = result[0]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="报告文件不存在")
+    
+    return FileResponse(file_path, media_type="application/json")
+
+# 启动服务
+if __name__ == "__main__":
+    # 初始化评估工作线程
+    initialize_evaluation_workers()
+    print("评估工作线程初始化完成，开始监听评估队列...")
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -689,6 +689,14 @@
                                                         :disabled="!task.report">
                                                     <i class="bi bi-download"></i>
                                                 </button>
+                                                <button class="btn btn-sm btn-outline-warning" @click="startTask(task.id)"
+                                                        v-if="task.status === 'pending' || task.status === 'completed' || task.status === 'paused' || task.status === 'failed'">
+                                                    <i class="bi bi-play"></i> 启动
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @click="pauseTask(task.id)"
+                                                        v-else-if="task.status === 'running'">
+                                                    <i class="bi bi-pause"></i> 暂停
+                                                </button>
                                                 <button class="btn btn-sm btn-outline-danger" @click="deleteTask(task.id)">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
@@ -1267,73 +1275,78 @@
 
     <!-- 结果查看模态框 -->
     <div class="modal fade" id="resultsModal" tabindex="-1">
-        <div class="modal-dialog modal-xl">
+        <div class="modal-dialog modal-fullscreen">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">评估结果详情</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+                            <i class="bi bi-x"></i> 关闭
+                        </button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3 d-flex justify-content-between align-items-center">
-                        <span>共 {{ taskResults.total }} 条记录</span>
-                        <div class="btn-group" role="group">
-                            <button class="btn btn-sm btn-outline-success" @click="downloadFullPdf(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
-                                <i class="bi bi-file-earmark-pdf"></i> 全量PDF
-                            </button>
-                            <button class="btn btn-sm btn-outline-warning" @click="downloadFailedPdf(currentViewingTaskId)">
-                                <i class="bi bi-file-earmark-pdf"></i> 不合格PDF
-                            </button>
-                            <button class="btn btn-sm btn-outline-success" @click="downloadFullReport(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
-                                <i class="bi bi-file-earmark-json"></i> 全量JSON
-                            </button>
-                            <button class="btn btn-sm btn-outline-info" @click="downloadFailedReport(currentViewingTaskId)">
-                                <i class="bi bi-file-earmark-x"></i> 未通过JSON
-                            </button>
+                <div class="modal-body p-0">
+                    <div class="p-3 border-bottom">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>共 {{ taskResults.total }} 条记录</span>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-outline-success" @click="downloadFullPdf(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
+                                    <i class="bi bi-file-earmark-pdf"></i> 全量PDF
+                                </button>
+                                <button class="btn btn-sm btn-outline-warning" @click="downloadFailedPdf(currentViewingTaskId)">
+                                    <i class="bi bi-file-earmark-pdf"></i> 不合格PDF
+                                </button>
+                                <button class="btn btn-sm btn-outline-success" @click="downloadFullReport(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
+                                    <i class="bi bi-file-earmark-json"></i> 全量JSON
+                                </button>
+                                <button class="btn btn-sm btn-outline-info" @click="downloadFailedReport(currentViewingTaskId)">
+                                    <i class="bi bi-file-earmark-x"></i> 未通过JSON
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-sm">
+                    <div class="overflow-x-auto">
+                        <table class="table table-bordered table-sm w-100">
                             <thead>
                                 <tr>
-                                    <th>#</th>
-                                    <th>输入数据</th>
-                                    <th>模型输出</th>
-                                    <th>评估结果</th>
-                                    <th>分数</th>
-                                    <th>风险等级</th>
+                                    <th style="width: 5%; min-width: 50px;">#</th>
+                                    <th style="width: 30%; word-break: break-all;">输入数据</th>
+                                    <th style="width: 55%; word-break: break-all;">模型输出</th>
+                                    <th style="width: 10%; min-width: 100px;">评估结果</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr v-for="result in taskResults.results" :key="result.id">
                                     <td>{{ result.case_index + 1 }}</td>
-                                    <td><pre class="mb-0" style="font-size: 12px;">{{ JSON.stringify(result.input_data, null, 2) }}</pre></td>
-                                    <td><pre class="mb-0" style="max-height: 150px; overflow-y: auto; font-size: 11px;">{{ result.model_output }}</pre></td>
+                                    <td>
+                                        <div style="max-height: 200px; overflow-y: auto; font-size: 12px; white-space: pre-wrap;">{{ JSON.stringify(result.input_data, null, 2) }}</div>
+                                    </td>
+                                    <td>
+                                        <div style="max-height: 200px; overflow-y: auto; font-size: 11px; white-space: pre-wrap;">{{ result.model_output }}</div>
+                                    </td>
                                     <td>
                                         <span class="badge" :class="resultBadgeClass(result.evaluation_result)">
                                             {{ resultResultText(result.evaluation_result) }}
-                                        </span>
-                                    </td>
-                                    <td>{{ result.score !== null ? result.score.toFixed(1) : '-' }}</td>
-                                    <td>
-                                        <span class="badge" :class="riskBadgeClass(result.risk_level)">
-                                            {{ riskLevelText(result.risk_level) }}
                                         </span>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
-                    <nav v-if="taskResults.totalPages > 1">
-                        <ul class="pagination pagination-sm justify-content-center">
-                            <li class="page-item" :class="{ disabled: taskResults.currentPage <= 1 }">
-                                <a class="page-link" @click="changeResultsPage(-1)">上一页</a>
-                            </li>
-                            <li class="page-item active"><span class="page-link">{{ taskResults.currentPage }}</span></li>
-                            <li class="page-item" :class="{ disabled: taskResults.currentPage >= taskResults.totalPages }">
-                                <a class="page-link" @click="changeResultsPage(1)">下一页</a>
-                            </li>
-                        </ul>
-                    </nav>
+                    <div class="p-3 border-top">
+                        <nav v-if="taskResults.totalPages > 1">
+                            <ul class="pagination pagination-sm justify-content-center">
+                                <li class="page-item" :class="{ disabled: taskResults.currentPage <= 1 }">
+                                    <a class="page-link" @click="changeResultsPage(-1)">上一页</a>
+                                </li>
+                                <li class="page-item active"><span class="page-link">{{ taskResults.currentPage }}</span></li>
+                                <li class="page-item" :class="{ disabled: taskResults.currentPage >= taskResults.totalPages }">
+                                    <a class="page-link" @click="changeResultsPage(1)">下一页</a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1471,8 +1484,8 @@ const app = createApp({
             }
             
             try {
-                console.log('发送API请求:', method, `http://localhost:8001${url}`);
-                const response = await fetch(`http://localhost:8001${url}`, options);
+                console.log('发送API请求:', method, `http://localhost:8000${url}`);
+                const response = await fetch(`http://localhost:8000${url}`, options);
                 console.log('API响应状态:', response.status);
                 
                 if (response.status === 401) {
@@ -2168,8 +2181,13 @@ const app = createApp({
             }
         }
         
+        let isCreatingTask = false;
+        
         async function createTask() {
+            if (isCreatingTask) return; // 防止重复提交
+            
             try {
+                isCreatingTask = true;
                 if (!taskForm.value.rule_id && boundRules.value.length > 0) {
                     taskForm.value.rule_id = boundRules.value[0].id;
                 }
@@ -2187,6 +2205,8 @@ const app = createApp({
                 loadDashboardData();
             } catch (error) {
                 alert('创建失败: ' + error.message);
+            } finally {
+                isCreatingTask = false;
             }
         }
         
@@ -2215,7 +2235,7 @@ const app = createApp({
         
         async function downloadReport(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2242,7 +2262,7 @@ const app = createApp({
         
         async function downloadFullReport(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/full`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_json`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2269,7 +2289,7 @@ const app = createApp({
         
         async function downloadFailedReport(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/failed-report`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/failed_json`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2296,7 +2316,7 @@ const app = createApp({
         
         async function downloadFullPdf(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/full-pdf`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2323,7 +2343,7 @@ const app = createApp({
         
         async function downloadFailedPdf(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/failed-pdf`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/failed_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2356,6 +2376,28 @@ const app = createApp({
                 loadDashboardData();
             } catch (error) {
                 alert('删除失败: ' + error.message);
+            }
+        }
+        
+        async function startTask(id) {
+            if (!confirm('确定要启动此任务吗？')) return;
+            try {
+                await apiRequest('POST', `/api/tasks/${id}/start`);
+                loadTasks();
+                loadDashboardData();
+            } catch (error) {
+                alert('启动失败: ' + error.message);
+            }
+        }
+        
+        async function pauseTask(id) {
+            if (!confirm('确定要暂停此任务吗？')) return;
+            try {
+                await apiRequest('POST', `/api/tasks/${id}/pause`);
+                loadTasks();
+                loadDashboardData();
+            } catch (error) {
+                alert('暂停失败: ' + error.message);
             }
         }
         
@@ -2511,7 +2553,7 @@ const app = createApp({
             showDatasetUpload, handleFileSelect, uploadDataset, previewDataset, loadPreviewData, changePreviewPage, deleteDataset,
             showRuleModal, saveRule, editRule, viewRuleVersions, loadDatasetFields, addFieldToInput, addFieldToExpected, deleteRule,
             showTaskModal, createTask, autoBindRules, viewTaskResults, changeResultsPage, 
-            downloadReport, downloadFullReport, downloadFailedReport, downloadFullPdf, downloadFailedPdf, deleteTask,
+            downloadReport, downloadFullReport, downloadFailedReport, downloadFullPdf, downloadFailedPdf, deleteTask, startTask, pauseTask,
             showUserModal, saveUser, editUser, deleteUser,
             truncateUrl, formatTime, statusText, taskStatusText, getInputFieldsText,
             roleBadgeClass, resultBadgeClass, resultResultText, riskBadgeClass, riskLevelText
@@ -2525,7 +2567,11 @@ app.mount('#app');
 setInterval(async () => {
     const appInstance = document.querySelector('#app').__vue_app__;
     if (appInstance && appInstance._instance && appInstance._instance.data && appInstance._instance.data.isLoggedIn) {
-        // 可以在这里添加定时刷新逻辑
+        const instance = appInstance._instance;
+        if (instance.proxy && instance.proxy.loadTasks) {
+            // 每5秒刷新任务状态
+            instance.proxy.loadTasks();
+        }
     }
 }, 5000);
 </script>
