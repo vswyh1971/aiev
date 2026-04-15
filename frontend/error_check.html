@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>前端错误检查</title>
+</head>
+<body>
+    <h1>前端错误检查</h1>
+    <p>请按 F12 打开浏览器控制台查看错误信息</p>
+    <script>
+        window.onerror = function(msg, url, line, col, error) {
+            document.body.innerHTML += '<div style="color: red; background: white; padding: 10px; margin: 10px; border: 1px solid red;">';
+            document.body.innerHTML += '<h2>错误信息</h2>';
+            document.body.innerHTML += '<p><strong>错误:</strong> ' + msg + '</p>';
+            document.body.innerHTML += '<p><strong>文件:</strong> ' + url + '</p>';
+            document.body.innerHTML += '<p><strong>行:</strong> ' + line + '</p>';
+            document.body.innerHTML += '</div>';
+            return false;
+        };
+    </script>
+</body>
+</html>

@@ -647,6 +647,10 @@
                                         <th>被测模型</th>
                                         <th>数据集</th>
                                         <th>评估规则</th>
+                                        <th>规则类型</th>
+                                        <th>规则关联数据集</th>
+                                        <th>输入字段</th>
+                                        <th>版本</th>
                                         <th>状态</th>
                                         <th>进度</th>
                                         <th>结果</th>
@@ -660,6 +664,10 @@
                                         <td>{{ task.model_name }}</td>
                                         <td>{{ task.dataset_name }}</td>
                                         <td>{{ task.rule_name }}</td>
+                                        <td>{{ task.rule_type || '-' }}</td>
+                                        <td>{{ task.rule_dataset_name || '-' }}</td>
+                                        <td>{{ getInputFieldsText(task.rule_input_fields) }}</td>
+                                        <td>v{{ task.rule_version || 1 }}</td>
                                         <td>
                                             <span class="badge badge-status" :class="'badge-' + task.status">
                                                 {{ taskStatusText(task.status) }}
@@ -668,14 +676,14 @@
                                         <td>
                                             <div class="progress" style="width: 100px;" v-if="task.status === 'running'">
                                                 <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                                                     :style="{width: task.progress + '%'}">
+                                                     :style="{width: task.progress_percent + '%'}">
                                                 </div>
                                             </div>
                                             <span v-else>-</span>
                                         </td>
                                         <td>
                                             <small v-if="task.status === 'completed'">
-                                                通过: {{ task.passed }} / 失败: {{ task.failed }}
+                                                通过: {{ task.passed_cases || 0 }} / 失败: {{ task.failed_cases || 0 }}
                                             </small>
                                             <span v-else>-</span>
                                         </td>
@@ -704,7 +712,7 @@
                                         </td>
                                     </tr>
                                     <tr v-if="!tasks || tasks.length === 0">
-                                        <td colspan="9" class="text-center text-muted py-4">暂无评估任务</td>
+                                        <td colspan="13" class="text-center text-muted py-4">暂无评估任务</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -1287,22 +1295,107 @@
                     </div>
                 </div>
                 <div class="modal-body p-0">
-                    <div class="p-3 border-bottom">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span>共 {{ taskResults.total }} 条记录</span>
-                            <div class="btn-group" role="group">
-                                <button class="btn btn-sm btn-outline-success" @click="downloadFullPdf(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
-                                    <i class="bi bi-file-earmark-pdf"></i> 全量PDF
-                                </button>
-                                <button class="btn btn-sm btn-outline-warning" @click="downloadFailedPdf(currentViewingTaskId)">
-                                    <i class="bi bi-file-earmark-pdf"></i> 不合格PDF
-                                </button>
-                                <button class="btn btn-sm btn-outline-success" @click="downloadFullReport(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
-                                    <i class="bi bi-file-earmark-json"></i> 全量JSON
-                                </button>
-                                <button class="btn btn-sm btn-outline-info" @click="downloadFailedReport(currentViewingTaskId)">
-                                    <i class="bi bi-file-earmark-x"></i> 未通过JSON
-                                </button>
+                    <div class="p-3 border-bottom bg-light">
+                        <div class="row">
+                            <!-- 评估统计信息 -->
+                            <div class="col-12 mb-3">
+                                <h6 class="mb-3"><i class="bi bi-bar-chart"></i> 评估统计</h6>
+                                <div class="row g-3">
+                                    <div class="col-md-2">
+                                        <div class="card bg-primary text-white h-100">
+                                            <div class="card-body text-center">
+                                                <h5 class="card-title">总用例数</h5>
+                                                <h2 class="mb-0">{{ taskResults?.total }}</h2>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="card bg-success text-white h-100">
+                                            <div class="card-body text-center">
+                                                <h5 class="card-title">通过数</h5>
+                                                <h2 class="mb-0">{{ taskResults.results.filter(r => r.evaluation_result === 'passed').length }}</h2>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="card bg-info text-white h-100">
+                                            <div class="card-body text-center">
+                                                <h5 class="card-title">通过率</h5>
+                                                <h2 class="mb-0">{{ taskResults?.total > 0 ? Math.round(taskResults.results.filter(r => r.evaluation_result === 'passed').length / taskResults.total * 100) : 0 }}%</h2>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-dark text-white h-100">
+                                            <div class="card-body text-center">
+                                                <h5 class="card-title">拒答用例</h5>
+                                                <div class="row">
+                                                    <div class="col-6">
+                                                        <h3 class="mb-0">{{ refusalStats.refusalTotal }}</h3>
+                                                        <small>总数</small>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <h3 class="mb-0">{{ refusalStats.refusalPassed }}</h3>
+                                                        <small>通过</small>
+                                                    </div>
+                                                </div>
+                                                <small>通过率：{{ refusalStats.refusalPassRate }}%</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card bg-secondary text-white h-100">
+                                            <div class="card-body text-center">
+                                                <h5 class="card-title">非拒答用例</h5>
+                                                <div class="row">
+                                                    <div class="col-6">
+                                                        <h3 class="mb-0">{{ refusalStats.nonRefusalTotal }}</h3>
+                                                        <small>总数</small>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <h3 class="mb-0">{{ refusalStats.nonRefusalPassed }}</h3>
+                                                        <small>通过</small>
+                                                    </div>
+                                                </div>
+                                                <small>通过率：{{ refusalStats.nonRefusalPassRate }}%</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 筛选和下载按钮 -->
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-sm" :class="resultFilter === 'all' ? 'btn-primary' : 'btn-outline-secondary'" @click="setFilter('all')">
+                                            全部 ({{ taskResults?.total }})
+                                        </button>
+                                        <button class="btn btn-sm" :class="resultFilter === 'passed' ? 'btn-success' : 'btn-outline-success'" @click="setFilter('passed')">
+                                            <i class="bi bi-check-circle"></i> 通过 ({{ taskResults.results.filter(r => r.evaluation_result === 'passed').length }})
+                                        </button>
+                                        <button class="btn btn-sm" :class="resultFilter === 'failed' ? 'btn-danger' : 'btn-outline-danger'" @click="setFilter('failed')">
+                                            <i class="bi bi-x-circle"></i> 未通过 ({{ taskResults.results.filter(r => r.evaluation_result === 'failed').length }})
+                                        </button>
+                                    </div>
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+                                            <i class="bi bi-x"></i> 关闭
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-pdf" @click="downloadFullPdf(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
+                                            <i class="bi bi-file-earmark-pdf"></i> 全量 PDF
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-warning" @click="downloadFailedPdf(currentViewingTaskId)">
+                                            <i class="bi bi-file-earmark-pdf"></i> 不合格 PDF
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-success" @click="downloadFullReport(currentViewingTaskId)" v-if="currentUser.role === 'admin'">
+                                            <i class="bi bi-file-earmark-json"></i> 全量 JSON
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-info" @click="downloadFailedReport(currentViewingTaskId)">
+                                            <i class="bi bi-file-earmark-x"></i> 未通过 JSON
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1311,13 +1404,14 @@
                             <thead>
                                 <tr>
                                     <th style="width: 5%; min-width: 50px;">#</th>
-                                    <th style="width: 30%; word-break: break-all;">输入数据</th>
-                                    <th style="width: 55%; word-break: break-all;">模型输出</th>
+                                    <th style="width: 20%; word-break: break-all;">输入数据</th>
+                                    <th style="width: 20%; word-break: break-all;">模型输出</th>
+                                    <th style="width: 45%; word-break: break-all;">评估过程</th>
                                     <th style="width: 10%; min-width: 100px;">评估结果</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="result in taskResults.results" :key="result.id">
+                                <tr v-for="result in getResultsList()" :key="result.id">
                                     <td>{{ result.case_index + 1 }}</td>
                                     <td>
                                         <div style="max-height: 200px; overflow-y: auto; font-size: 12px; white-space: pre-wrap;">{{ JSON.stringify(result.input_data, null, 2) }}</div>
@@ -1326,22 +1420,28 @@
                                         <div style="max-height: 200px; overflow-y: auto; font-size: 11px; white-space: pre-wrap;">{{ result.model_output }}</div>
                                     </td>
                                     <td>
+                                        <div style="max-height: 200px; overflow-y: auto; font-size: 11px; white-space: pre-wrap;">{{ result.details_text || '无' }}</div>
+                                    </td>
+                                    <td>
                                         <span class="badge" :class="resultBadgeClass(result.evaluation_result)">
                                             {{ resultResultText(result.evaluation_result) }}
                                         </span>
                                     </td>
                                 </tr>
+                                <tr v-if="!(taskResults.value?.results?.length > 0)">
+                                    <td colspan="5" class="text-center text-muted">暂无数据</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
                     <div class="p-3 border-top">
-                        <nav v-if="taskResults.totalPages > 1">
+                        <nav v-if="taskResults?.totalPages > 1">
                             <ul class="pagination pagination-sm justify-content-center">
-                                <li class="page-item" :class="{ disabled: taskResults.currentPage <= 1 }">
+                                <li class="page-item" :class="{ disabled: (taskResults?.currentPage || 1) <= 1 }">
                                     <a class="page-link" @click="changeResultsPage(-1)">上一页</a>
                                 </li>
-                                <li class="page-item active"><span class="page-link">{{ taskResults.currentPage }}</span></li>
-                                <li class="page-item" :class="{ disabled: taskResults.currentPage >= taskResults.totalPages }">
+                                <li class="page-item active"><span class="page-link">{{ taskResults?.currentPage || 1 }}</span></li>
+                                <li class="page-item" :class="{ disabled: (taskResults?.currentPage || 1) >= (taskResults?.totalPages || 1) }">
                                     <a class="page-link" @click="changeResultsPage(1)">下一页</a>
                                 </li>
                             </ul>
@@ -1416,20 +1516,88 @@ const app = createApp({
         const taskResults = ref({ total: 0, totalPages: 0, currentPage: 1, results: [] });
         const currentViewingTaskId = ref(null);
         const selectedResult = ref(null);
+        const resultFilter = ref('all'); // 添加结果筛选器
+        const filterTrigger = ref(0); // 用于触发筛选更新的计数器
         
         // 计算属性
         const pageTitle = computed(() => {
             const titles = {
                 dashboard: '系统仪表板',
                 models: '大模型管理',
-                system_llms: '系统LLM',
-                eval_llms: '评估LLM',
+                system_llms: '系统 LLM',
+                eval_llms: '评估 LLM',
                 datasets: '数据集管理',
                 rules: '评估规则管理',
                 tasks: '评估任务',
                 users: '用户管理'
             };
             return titles[currentPage.value] || '仪表板';
+        });
+        
+        // 添加筛选后的结果计算属性
+        // 方法：获取筛选后的结果
+        // 筛选后的结果 - 直接修改显示的数据
+        function applyFilter() {
+            if (!taskResults.value) return;
+            
+            const allResults = taskResults.value.results || [];
+            const filter = resultFilter.value;
+            
+            // 检查用户权限
+            const userRole = currentUser.value ? currentUser.value.role : 'admin';
+            const isAdminOrAuditor = userRole === 'admin' || userRole === 'auditor';
+            
+            // 获取筛选结果
+            let filtered = allResults;
+            if (isAdminOrAuditor) {
+                if (filter === 'passed') {
+                    filtered = allResults.filter(r => r.evaluation_result === 'passed');
+                } else if (filter === 'failed') {
+                    filtered = allResults.filter(r => r.evaluation_result === 'failed');
+                }
+            } else {
+                // 普通用户只能看到未通过
+                filtered = allResults.filter(r => r.evaluation_result === 'failed');
+            }
+            
+            // 使用新数组替换以确保Vue检测到变化
+            taskResults.value.results = [...filtered];
+        }
+        
+        // 获取评估结果列表
+        function getResultsList() {
+            return taskResults.value?.results || [];
+        }
+        
+        // 设置筛选器并应用筛选
+        function setFilter(filter) {
+            resultFilter.value = filter;
+            applyFilter();
+            filterTrigger.value++;
+        }
+        
+        // 添加拒答/非拒答统计
+        const isRefusal = (details) => {
+            if (!details) return false;
+            const refusalKeywords = ['拒答', '拒绝回答', '完全拒答', '部分拒答'];
+            return refusalKeywords.some(keyword => details.includes(keyword));
+        };
+        
+        const refusalStats = computed(() => {
+            const results = taskResults.value.results || [];
+            const refusalTotal = results.filter(r => isRefusal(r.details_text)).length;
+            const nonRefusalTotal = results.length - refusalTotal;
+            const refusalPassed = results.filter(r => isRefusal(r.details_text) && r.evaluation_result === 'passed').length;
+            const nonRefusalPassed = results.filter(r => !isRefusal(r.details_text) && r.evaluation_result === 'passed').length;
+            
+            return {
+                refusalTotal: refusalTotal || 0,
+                nonRefusalTotal: nonRefusalTotal || 0,
+                refusalPassed: refusalPassed || 0,
+                nonRefusalPassed: nonRefusalPassed || 0,
+                refusalPassRate: refusalTotal > 0 ? Math.round(refusalPassed / refusalTotal * 100) : 0,
+                nonRefusalPassRate: nonRefusalTotal > 0 ? Math.round(nonRefusalPassed / nonRefusalTotal * 100) : 0
+            };
         });
         
         const datasetsWithRules = computed(() => {
@@ -1463,20 +1631,21 @@ const app = createApp({
         async function apiRequest(method, url, data = null, isFormData = false) {
             const options = {
                 method,
-                headers: {},
-                credentials: 'include' // 包含凭证，处理跨域Cookie
+                credentials: 'include' // 包含凭证，处理跨域 Cookie
             };
             
-            if (token.value) {
+            // 初始化 headers 为空对象
+            options.headers = {};
+            
+            if (token.value && !isFormData) {
                 options.headers['Authorization'] = `Bearer ${token.value}`;
             }
             
             if (data) {
                 if (isFormData) {
-                    // 直接使用传入的FormData对象，不要设置Content-Type，让浏览器自动设置
+                    // 直接使用传入的 FormData 对象，不要设置 Content-Type，让浏览器自动设置
                     options.body = data;
-                    // 移除可能存在的Content-Type头，让FormData自动处理
-                    delete options.headers['Content-Type'];
+                    // 不要手动设置 Content-Type，FormData 会自动设置 boundary
                 } else {
                     options.headers['Content-Type'] = 'application/json';
                     options.body = JSON.stringify(data);
@@ -1484,8 +1653,8 @@ const app = createApp({
             }
             
             try {
-                console.log('发送API请求:', method, `http://localhost:8000${url}`);
-                const response = await fetch(`http://localhost:8000${url}`, options);
+                console.log('发送API请求:', method, `http://localhost:8001${url}`);
+                const response = await fetch(`http://localhost:8001${url}`, options);
                 console.log('API响应状态:', response.status);
                 
                 if (response.status === 401) {
@@ -1556,16 +1725,21 @@ const app = createApp({
             try {
                 loginError.value = '';
                 console.log('开始登录，用户名:', loginForm.value.username);
-                // 使用表单格式发送登录请求，与后端API保持一致
+                console.log('登录前 token.value:', token.value);
+                console.log('登录前 isLoggedIn.value:', isLoggedIn.value);
+                
+                // 使用表单格式发送登录请求，与后端 API 保持一致
                 const formData = new FormData();
                 formData.append('username', loginForm.value.username);
                 formData.append('password', loginForm.value.password);
                 
+                console.log('发送登录请求到：/api/auth/login');
                 const result = await apiRequest('POST', '/api/auth/login', formData, true);
                 console.log('登录成功，响应数据:', result);
                 
                 // 确保响应数据格式正确
                 if (!result.access_token || !result.username || !result.role) {
+                    console.error('登录响应格式错误:', result);
                     throw new Error('登录响应格式错误');
                 }
                 
@@ -1574,17 +1748,25 @@ const app = createApp({
                 console.log('设置登录状态前:', isLoggedIn.value);
                 isLoggedIn.value = true;
                 console.log('设置登录状态后:', isLoggedIn.value);
+                console.log('设置 token.value:', token.value);
+                console.log('设置 currentUser.value:', currentUser.value);
                 
                 localStorage.setItem('token', token.value);
                 localStorage.setItem('user', JSON.stringify(currentUser.value));
                 console.log('本地存储已更新');
+                console.log('localStorage token:', localStorage.getItem('token'));
+                console.log('localStorage user:', localStorage.getItem('user'));
                 
-                // 强制刷新页面，确保Vue响应式系统正确更新
-                setTimeout(() => {
-                    console.log('登录成功，切换到仪表板');
-                }, 100);
+                // 立即切换到仪表板页面并加载数据
+                console.log('登录成功，切换到仪表板');
+                currentPage.value = 'dashboard';
+                console.log('设置 currentPage.value:', currentPage.value);
+                loadDashboardData();
+                console.log('登录流程完成');
             } catch (error) {
                 console.error('登录失败:', error);
+                console.error('错误堆栈:', error.stack);
+                console.error('错误消息:', error.message);
                 // 确保错误信息是字符串
                 loginError.value = typeof error.message === 'string' ? error.message : '登录失败，请检查账号和密码';
             }
@@ -1603,17 +1785,19 @@ const app = createApp({
         // 加载仪表板数据
         async function loadDashboardData() {
             try {
-                // 由于后端没有 /api/stats/dashboard 接口，使用默认数据
+                stats.value = await apiRequest('GET', '/api/stats/dashboard');
+                console.log('加载仪表板数据成功:', stats.value);
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+                // 失败时使用默认数据
                 stats.value = {
                     totalModels: 0,
+                    activeModels: 0,
                     totalDatasets: 0,
                     completedTasks: 0,
                     runningTasks: 0,
                     recent_activities: []
                 };
-                console.log('使用默认仪表板数据');
-            } catch (error) {
-                console.error('加载统计数据失败:', error);
             }
         }
         
@@ -1707,7 +1891,7 @@ const app = createApp({
                 name: '', provider: '', model_type: '', api_url: '',
                 api_key: '', auth_type: 'api_key',
                 max_tokens: 2048, temperature: 0.7, timeout: 30,
-                model_category: defaultCategory
+                category: defaultCategory
             };
             new bootstrap.Modal(document.getElementById('modelModal')).show();
         }
@@ -1726,14 +1910,14 @@ const app = createApp({
                     localStorage.setItem(modelKey, modelForm.value.api_key);
                 } else {
                     let result;
-                    if (modelForm.value.model_category === 'system') {
+                    if (modelForm.value.category === 'system') {
                         result = await apiRequest('POST', '/api/models/system', modelForm.value);
-                    } else if (modelForm.value.model_category === 'evaluation') {
+                    } else if (modelForm.value.category === 'evaluation') {
                         result = await apiRequest('POST', '/api/models/evaluation', modelForm.value);
                     } else {
                         throw new Error('模型类型未知');
                     }
-                    if (modelForm.value.model_category === 'system') {
+                    if (modelForm.value.category === 'system') {
                         loadSystemLLMs();
                     } else {
                         loadEvalLLMs();
@@ -1754,8 +1938,8 @@ const app = createApp({
         function editModel(model, category = null) {
             editingModel.value = model;
             modelForm.value = { ...model };
-            if (!modelForm.value.model_category) {
-                modelForm.value.model_category = category || 'evaluation';
+            if (!modelForm.value.category) {
+                modelForm.value.category = category || 'evaluation';
             }
             // 从本地存储中恢复API密钥，避免清空
             if (model.id) {
@@ -1821,9 +2005,9 @@ const app = createApp({
                 
                 // 根据模型类型调用相应的测试接口
                 let result;
-                if (model.model_category === 'system') {
+                if (model.category === 'system') {
                     result = await apiRequest('POST', `/api/models/system/${id}/test`, requestBody);
-                } else if (model.model_category === 'evaluation') {
+                } else if (model.category === 'evaluation') {
                     result = await apiRequest('POST', `/api/models/evaluation/${id}/test`, requestBody);
                 } else {
                     throw new Error('模型类型未知');
@@ -1834,7 +2018,7 @@ const app = createApp({
                         status: 'success',
                         message: '连接成功！',
                         progress: 100,
-                        response: result.response?.substring(0, 200) || '无响应内容',
+                        response: (typeof result.response === 'string' ? result.response : JSON.stringify(result.response)).substring(0, 200) || '无响应内容',
                         timestamp: new Date().toLocaleString()
                     };
                 } else {
@@ -2212,30 +2396,66 @@ const app = createApp({
         
         async function viewTaskResults(id) {
             currentViewingTaskId.value = id;
-            const results = await apiRequest('GET', `/api/tasks/${id}/results`);
-            taskResults.value = {
-                results: results,
-                total: results.length,
-                currentPage: 1,
-                totalPages: 1
-            };
-            new bootstrap.Modal(document.getElementById('resultsModal')).show();
+            resultFilter.value = 'all';
+            try {
+                const response = await apiRequest('GET', `/api/tasks/${id}/results?page=1&page_size=100`);
+                // 保存所有原始数据
+                const allResults = (response.data || []).slice();
+                taskResults.value = {
+                    results: allResults, // 保存所有数据
+                    allResults: allResults, // 额外保存一份原始数据
+                    total: response.total || 0,
+                    currentPage: 1,
+                    totalPages: Math.ceil((response.total || 0) / 100)
+                };
+                // 打开模态框
+                new bootstrap.Modal(document.getElementById('resultsModal')).show();
+            } catch (e) {
+                console.error('加载评估结果失败:', e);
+                alert('加载评估结果失败: ' + e.message);
+            }
+        }
+        
+        // 获取评估结果列表（带筛选）
+        function getResultsList() {
+            if (!taskResults.value) return [];
+            
+            const allResults = taskResults.value.allResults || taskResults.value.results || [];
+            const filter = resultFilter.value;
+            
+            // 检查用户权限
+            const userRole = currentUser.value ? currentUser.value.role : 'admin';
+            const isAdminOrAuditor = userRole === 'admin' || userRole === 'auditor';
+            
+            // 普通用户只能看到未通过
+            if (!isAdminOrAuditor) {
+                return allResults.filter(r => r.evaluation_result === 'failed');
+            }
+            
+            // 管理员和审计员根据筛选器过滤
+            if (filter === 'passed') {
+                return allResults.filter(r => r.evaluation_result === 'passed');
+            } else if (filter === 'failed') {
+                return allResults.filter(r => r.evaluation_result === 'failed');
+            }
+            
+            return allResults;
         }
         
         async function changeResultsPage(delta) {
             const newPage = taskResults.value.currentPage + delta;
-            const results = await apiRequest('GET', `/api/tasks/${currentViewingTaskId.value}/results?page=${newPage}`);
+            const response = await apiRequest('GET', `/api/tasks/${currentViewingTaskId.value}/results?page=${newPage}&page_size=100`);
             taskResults.value = {
-                results: results,
-                total: results.length,
+                results: response.data || [],
+                total: response.total || 0,
                 currentPage: newPage,
-                totalPages: 1
+                totalPages: Math.ceil((response.total || 0) / 100)
             };
         }
         
         async function downloadReport(id) {
             try {
-                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_pdf`, {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/full_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2262,7 +2482,7 @@ const app = createApp({
         
         async function downloadFullReport(id) {
             try {
-                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_json`, {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/full_json`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2289,7 +2509,7 @@ const app = createApp({
         
         async function downloadFailedReport(id) {
             try {
-                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/failed_json`, {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/failed_json`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2316,7 +2536,7 @@ const app = createApp({
         
         async function downloadFullPdf(id) {
             try {
-                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_pdf`, {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/full_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2343,7 +2563,7 @@ const app = createApp({
         
         async function downloadFailedPdf(id) {
             try {
-                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/failed_pdf`, {
+                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/failed_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2544,7 +2764,7 @@ const app = createApp({
             testModelResult, testPrompt, isTestingModel,
             
             // 计算属性
-            pageTitle, roleText, roleTextMap, datasetsWithRules,
+            pageTitle, roleText, roleTextMap, datasetsWithRules, refusalStats,
             
             // 方法
             login, logout,
@@ -2552,7 +2772,7 @@ const app = createApp({
             showModelModal, saveModel, editModel, deleteModel, testModelConnection, canDeleteModel, closeTestModal,
             showDatasetUpload, handleFileSelect, uploadDataset, previewDataset, loadPreviewData, changePreviewPage, deleteDataset,
             showRuleModal, saveRule, editRule, viewRuleVersions, loadDatasetFields, addFieldToInput, addFieldToExpected, deleteRule,
-            showTaskModal, createTask, autoBindRules, viewTaskResults, changeResultsPage, 
+            showTaskModal, createTask, autoBindRules, viewTaskResults, changeResultsPage, setFilter, getResultsList, 
             downloadReport, downloadFullReport, downloadFailedReport, downloadFullPdf, downloadFailedPdf, deleteTask, startTask, pauseTask,
             showUserModal, saveUser, editUser, deleteUser,
             truncateUrl, formatTime, statusText, taskStatusText, getInputFieldsText,
@@ -2563,15 +2783,22 @@ const app = createApp({
 
 app.mount('#app');
 
+// 添加 Math 到全局，以便在模板中使用
+app.config.globalProperties.Math = Math;
+
 // 定期刷新运行中的任务状态
 setInterval(async () => {
-    const appInstance = document.querySelector('#app').__vue_app__;
-    if (appInstance && appInstance._instance && appInstance._instance.data && appInstance._instance.data.isLoggedIn) {
-        const instance = appInstance._instance;
-        if (instance.proxy && instance.proxy.loadTasks) {
-            // 每5秒刷新任务状态
-            instance.proxy.loadTasks();
+    try {
+        const appInstance = document.querySelector('#app').__vue_app__;
+        if (appInstance && appInstance._instance && appInstance._instance.data && appInstance._instance.data.isLoggedIn) {
+            const instance = appInstance._instance;
+            if (instance.proxy && instance.proxy.loadTasks) {
+                // 每5秒刷新任务状态
+                await instance.proxy.loadTasks();
+            }
         }
+    } catch (error) {
+        console.error('定期刷新任务状态失败:', error);
     }
 }, 5000);
 </script>

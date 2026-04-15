@@ -1,48 +1,48 @@
 import sqlite3
+import os
+
+# 数据库路径
+project_root = os.path.dirname(os.path.abspath(__file__))
+DATABASE_PATH = os.path.join(project_root, 'database', 'llm_eval_system.db')
+
+print("检查任务状态...")
+print(f"数据库路径: {DATABASE_PATH}")
+print()
 
 # 连接数据库
-conn = sqlite3.connect('llm_eval_system.db')
+conn = sqlite3.connect(DATABASE_PATH)
 cursor = conn.cursor()
 
-# 查询最近的评估任务
-cursor.execute("""
-    SELECT id, name, status, progress_percent, completed_cases, 
-           passed_cases, failed_cases, total_cases, start_time, end_time
-    FROM evaluation_tasks 
-    ORDER BY id DESC 
-    LIMIT 10
-""")
+try:
+    # 检查当前任务
+    print("检查当前任务:")
+    cursor.execute("SELECT id, name, status FROM evaluation_tasks")
+    tasks = cursor.fetchall()
+    print(f"任务数量: {len(tasks)}")
+    
+    for task in tasks:
+        print(f"任务ID: {task[0]}, 名称: {task[1]}, 状态: {task[2]}")
+    
+    # 检查评估结果
+    print("\n检查评估结果:")
+    cursor.execute("SELECT COUNT(*) FROM evaluation_results")
+    result_count = cursor.fetchone()[0]
+    print(f"评估结果数量: {result_count}")
+    
+    # 删除所有任务和评估结果
+    print("\n删除所有任务和评估结果...")
+    cursor.execute("DELETE FROM evaluation_results")
+    cursor.execute("DELETE FROM evaluation_tasks")
+    conn.commit()
+    print("删除完成")
+    
+    # 再次检查任务
+    cursor.execute("SELECT id, name, status FROM evaluation_tasks")
+    tasks = cursor.fetchall()
+    print(f"删除后任务数量: {len(tasks)}")
+    
+finally:
+    # 关闭连接
+    conn.close()
 
-print("最近的评估任务:")
-print("-" * 120)
-print(f"{'ID':<5} {'名称':<30} {'状态':<10} {'进度':<6} {'完成/总计':<12} {'通过':<5} {'失败':<5} {'开始时间':<20} {'结束时间':<20}")
-print("-" * 120)
-
-for row in cursor.fetchall():
-    task_id, name, status, progress, completed, passed, failed, total, start_time, end_time = row
-    print(f"{task_id:<5} {name:<30} {status:<10} {progress:<6} {completed}/{total:<12} {passed:<5} {failed:<5} {start_time or '-':<20} {end_time or '-':<20}")
-
-# 检查最新任务的详细信息
-print("\n最新任务的详细信息:")
-cursor.execute("""
-    SELECT id, name, status, result_summary, report_file_path, 
-           full_report_file_path, failed_report_file_path, 
-           full_pdf_path, failed_pdf_path
-    FROM evaluation_tasks 
-    ORDER BY id DESC 
-    LIMIT 1
-""")
-
-latest_task = cursor.fetchone()
-if latest_task:
-    print(f"任务ID: {latest_task[0]}")
-    print(f"任务名称: {latest_task[1]}")
-    print(f"状态: {latest_task[2]}")
-    print(f"结果摘要: {latest_task[3]}")
-    print(f"报告文件: {latest_task[4]}")
-    print(f"全量报告: {latest_task[5]}")
-    print(f"失败报告: {latest_task[6]}")
-    print(f"全量PDF: {latest_task[7]}")
-    print(f"失败PDF: {latest_task[8]}")
-
-conn.close()
+print("\n检查完成！")

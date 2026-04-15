@@ -1,0 +1,28 @@
+# 核心依赖
+fastapi==0.104.1
+uvicorn==0.24.0.post1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# 数据库依赖
+psycopg2-binary==2.9.9
+sqlite3==3.35.5
+
+# 缓存依赖
+redis==5.0.1
+
+# 任务队列
+celery==5.3.4
+
+# 工具库
+python-dotenv==1.0.0
+reportlab==4.0.9
+pandas==2.1.4
+
+# 安全依赖
+pyjwt==2.8.0
+cryptography==41.0.7
+
+# 其他依赖
+requests==2.31.0

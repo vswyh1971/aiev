@@ -1,0 +1,13 @@
+{
+  "report_info": {
+    "task_id": 1,
+    "task_name": "1-2",
+    "generated_at": "2026-04-15T13:54:14.040404",
+    "report_type": "failed_cases_report"
+  },
+  "summary": {
+    "total_cases": 0,
+    "failed_count": 0
+  },
+  "failed_cases": []
+}

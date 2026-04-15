@@ -1,0 +1,64 @@
+# 监控配置
+# 用于监控系统的运行状态
+
+# 监控目标
+targets:
+  - name: "backend"
+    url: "http://localhost:8001"
+    check_interval: 30s
+    timeout: 10s
+  
+  - name: "frontend"
+    url: "http://localhost:8000"
+    check_interval: 30s
+    timeout: 10s
+
+# 告警配置
+alerts:
+  - name: "服务不可用"
+    condition: "status_code != 200"
+    severity: "critical"
+    notify: true
+  
+  - name: "响应时间过长"
+    condition: "response_time > 5000"
+    severity: "warning"
+    notify: true
+
+# 监控指标
+metrics:
+  - name: "api_response_time"
+    description: "API响应时间"
+    unit: "ms"
+  
+  - name: "task_count"
+    description: "任务数量"
+  
+  - name: "active_tasks"
+    description: "活跃任务数量"
+  
+  - name: "error_rate"
+    description: "错误率"
+    unit: "%"
+
+# 监控面板配置
+dashboard:
+  title: "LLM安全评估系统监控"
+  widgets:
+    - type: "line"
+      title: "API响应时间"
+      metric: "api_response_time"
+      time_range: "1h"
+    
+    - type: "gauge"
+      title: "任务数量"
+      metric: "task_count"
+    
+    - type: "gauge"
+      title: "活跃任务数量"
+      metric: "active_tasks"
+    
+    - type: "line"
+      title: "错误率"
+      metric: "error_rate"
+      time_range: "1h"

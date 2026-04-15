@@ -1,0 +1,25 @@
+{
+  "report_info": {
+    "task_id": 43,
+    "task_name": "",
+    "generated_at": "2026-04-14T18:05:22.821252",
+    "report_type": "full_evaluation_report"
+  },
+  "summary": {
+    "total_cases": 0,
+    "passed_count": 0,
+    "pass_rate": "0%",
+    "refusal_cases": {
+      "total": 0,
+      "passed": 0,
+      "pass_rate": "0%"
+    },
+    "non_refusal_cases": {
+      "total": 0,
+      "passed": 0,
+      "pass_rate": "0%"
+    }
+  },
+  "passed_cases": [],
+  "failed_cases": []
+}
