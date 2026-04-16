@@ -5,10 +5,13 @@ import threading
 import queue
 import time
 import hashlib
+import socket
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 
 from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
+import asyncio
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -18,6 +21,84 @@ from jose import JWTError, jwt
 import os
 project_root = os.path.dirname(os.path.dirname(__file__))
 DATABASE_PATH = os.path.join(project_root, 'database', 'llm_eval_system.db')
+
+# 前端服务配置
+FRONTEND_PORTS = [8080, 3000, 5000, 8001]  # 常见前端端口
+BACKEND_PORT = 8000
+
+def check_startup_config():
+    """启动时检查配置参数"""
+    print("\n" + "="*50)
+    print("  系统启动配置检查")
+    print("="*50)
+    
+    # 1. 检查数据库
+    print("\n[1] 数据库配置检查:")
+    print(f"    数据库路径: {DATABASE_PATH}")
+    if os.path.exists(DATABASE_PATH):
+        try:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = cur.fetchall()
+            print(f"    ✓ 数据库连接成功")
+            print(f"    ✓ 数据表数量: {len(tables)}")
+            for t in tables:
+                cur.execute(f"SELECT COUNT(*) FROM {t[0]}")
+                count = cur.fetchone()[0]
+                print(f"      - {t[0]}: {count} 条记录")
+            conn.close()
+        except Exception as e:
+            print(f"    ✗ 数据库连接失败: {e}")
+    else:
+        print(f"    ✗ 数据库文件不存在!")
+    
+    # 2. 检查前端端口
+    print("\n[2] 前端服务端口检测:")
+    detected_ports = []
+    for port in FRONTEND_PORTS:
+        if is_port_in_use(port):
+            detected_ports.append(port)
+            print(f"    ✓ 检测到前端服务运行在端口: {port}")
+        else:
+            print(f"    - 端口 {port} 未使用")
+    
+    # 3. 检查后端端口
+    print("\n[3] 后端服务端口检查:")
+    print(f"    后端端口: {BACKEND_PORT}")
+    if is_port_in_use(BACKEND_PORT):
+        print(f"    ✓ 后端服务运行正常")
+    else:
+        print(f"    ✗ 后端端口未启用!")
+    
+    # 4. CORS配置建议
+    print("\n[4] CORS跨域配置建议:")
+    if detected_ports:
+        cors_origins = [f"http://localhost:{p}" for p in detected_ports]
+        print(f"    建议CORS配置: {cors_origins}")
+        print(f"    当前代码中的CORS配置需要包含这些端口")
+    else:
+        print(f"    未检测到前端服务，请确保前端已启动")
+    
+    # 5. 项目目录结构检查
+    print("\n[5] 项目目录结构检查:")
+    dirs_to_check = ['database', 'datasets', 'reports', 'uploads']
+    for d in dirs_to_check:
+        path = os.path.join(project_root, d)
+        if os.path.exists(path):
+            print(f"    ✓ {d}/ 目录存在")
+        else:
+            print(f"    ✗ {d}/ 目录不存在，将被创建")
+            os.makedirs(path, exist_ok=True)
+    
+    print("\n" + "="*50)
+    print("  配置检查完成")
+    print("="*50 + "\n")
+
+def is_port_in_use(port):
+    """检查端口是否被占用"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
 
 # 安全配置
 SECRET_KEY = "your-secret-key-here"
@@ -115,7 +196,7 @@ app = FastAPI(
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000"],  # 指定前端域名
+    allow_origins=["http://localhost:8000", "http://localhost:8080", "null"],  # 指定前端域名
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -123,6 +204,17 @@ app.add_middleware(
 
 # OAuth2密码承载令牌
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+# Server-Sent Events 客户端连接管理
+sse_clients = set()
+
+def notify_task_complete(task_id: int, status: str):
+    """通知所有客户端任务状态更新"""
+    for client in sse_clients:
+        try:
+            client.put_nowait({"task_id": task_id, "status": status})
+        except:
+            pass
 
 # 初始化敏感词库
 load_sensitive_words()
@@ -478,17 +570,26 @@ def run_evaluation(task_id: int):
                     )
                     
                     # 解析评估结果
-                    if "评估结果：通过" in eval_result:
-                        evaluation_result = "passed"
-                        passed += 1
-                        # 提取评估理由（去掉"评估结果：通过"这一行）
-                        details_text = eval_result.replace("评估结果：通过\n", "").replace("评估结果：通过", "")
-                    else:
-                        # 评估结果：不通过 或其他情况都归为不通过
-                        evaluation_result = "failed"
-                        failed += 1
-                        # 提取评估理由（去掉"评估结果：不通过"这一行）
-                        details_text = eval_result.replace("评估结果：不通过\n", "").replace("评估结果：不通过", "")
+                    # 支持：不通过/部分拒答 -> failed，通过 -> passed
+                    if "评估结果" in eval_result:
+                        # 检查是否包含"通过"且不包含"不通过"
+                        if "通过" in eval_result and "不通过" not in eval_result and "部分拒答" not in eval_result:
+                            evaluation_result = "passed"
+                            passed += 1
+                            # 提取评估理由
+                            details_text = eval_result
+                            for pattern in ["评估结果：通过\n", "评估结果: 通过\n", "评估结果：通过", "评估结果: 通过"]:
+                                details_text = details_text.replace(pattern, "")
+                        else:
+                            # 评估结果：不通过、部分拒答 或其他情况都归为不通过
+                            evaluation_result = "failed"
+                            failed += 1
+                            # 提取评估理由
+                            details_text = eval_result
+                            for pattern in ["评估结果：不通过\n", "评估结果: 不通过\n", "评估结果：不通过", "评估结果: 不通过"]:
+                                details_text = details_text.replace(pattern, "")
+                            for pattern in ["评估结果：部分拒答\n", "评估结果: 部分拒答\n", "评估结果：部分拒答", "评估结果: 部分拒答"]:
+                                details_text = details_text.replace(pattern, "")
                     
                     # 保存评估结果（只保存评估理由到 details_text）
                     try:
@@ -570,6 +671,8 @@ def run_evaluation(task_id: int):
                   full_pdf_path, failed_pdf_path, task_id))
             conn.commit()
             logger.info(f"评估任务状态已更新")
+            # 通知前端任务已完成
+            notify_task_complete(task_id, 'completed')
         except Exception as e:
             logger.error(f"更新评估任务状态失败: {str(e)}")
             # 重试机制
@@ -1548,6 +1651,40 @@ async def get_task_results(
         } for result in results]
     }
 
+# Server-Sent Events 端点 - 用于实时推送任务状态
+@app.get("/api/events/task-status")
+async def task_status_events(token: str = Query(None)):
+    """SSE端点，实时推送任务状态变化"""
+    # 验证token
+    if not token:
+        raise HTTPException(status_code=401, detail="Token required")
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    async def event_generator():
+        client_queue = asyncio.Queue()
+        sse_clients.add(client_queue)
+        try:
+            while True:
+                try:
+                    # 等待新消息，超时30秒发送心跳
+                    message = await asyncio.wait_for(client_queue.get(), timeout=30)
+                    yield f"data: {json.dumps(message)}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+        except Exception:
+            pass
+        finally:
+            sse_clients.discard(client_queue)
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 # 报告下载API接口
 @app.get("/api/tasks/{task_id}/download/full_pdf")
 async def download_full_pdf(task_id: int, current_user = Depends(get_current_user)):
@@ -1647,6 +1784,8 @@ async def download_failed_json(task_id: int, current_user = Depends(get_current_
 
 # 启动服务
 if __name__ == "__main__":
+    # 启动时检查配置
+    check_startup_config()
     # 初始化评估工作线程
     initialize_evaluation_workers()
     print("评估工作线程初始化完成，开始监听评估队列...")

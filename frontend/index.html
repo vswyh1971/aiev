@@ -1467,8 +1467,80 @@ const app = createApp({
         const isLoggedIn = ref(false);
         const isLoading = ref(true);
         const currentPage = ref('dashboard');
+        const pageHistory = ref([]); // 页面历史记录
         const currentUser = ref({});
         const token = ref('');
+        
+        // 保存页面状态到浏览器历史记录
+        function pushState(page) {
+            if (pageHistory.value.length === 0 || pageHistory.value[pageHistory.value.length - 1] !== page) {
+                pageHistory.value.push(page);
+                // 使用 replaceState 而不是 pushState，防止浏览器历史条目过多
+                try {
+                    window.history.replaceState({ page: page, historyLength: pageHistory.value.length }, '', '#' + page);
+                } catch(e) {}
+            }
+        }
+        
+        // 处理浏览器返回按钮
+        function handlePopState(event) {
+            // 如果浏览器有历史状态
+            if (event.state && event.state.historyLength) {
+                // 只有当我们的内部历史还有记录时才处理
+                if (pageHistory.value.length > 1) {
+                    pageHistory.value.pop();
+                    const prevPage = pageHistory.value[pageHistory.value.length - 1];
+                    if (prevPage) {
+                        currentPage.value = prevPage;
+                        // 更新浏览器历史，保持同步
+                        try {
+                            window.history.replaceState({ page: prevPage, historyLength: pageHistory.value.length }, '', '#' + prevPage);
+                        } catch(e) {}
+                    }
+                } else {
+                    // 没有更多内部历史了，阻止浏览器继续返回
+                    event.preventDefault();
+                    // 保持在当前页面或返回首页
+                    if (pageHistory.value.length === 0) {
+                        pageHistory.value.push('dashboard');
+                    }
+                    const currentPage2 = pageHistory.value[pageHistory.value.length - 1] || 'dashboard';
+                    currentPage.value = currentPage2;
+                    try {
+                        window.history.replaceState({ page: currentPage2, historyLength: pageHistory.value.length }, '', '#' + currentPage2);
+                        // 再次push一个相同的状态，防止浏览器返回到外部
+                        window.history.pushState(null, '', window.location.href);
+                    } catch(e) {}
+                }
+            } else {
+                // 浏览器没有状态，说明已经返回到应用外部
+                event.preventDefault();
+                // 强制回到首页
+                currentPage.value = 'dashboard';
+                pageHistory.value = ['dashboard'];
+                try {
+                    window.history.replaceState({ page: 'dashboard', historyLength: 1 }, '', '#dashboard');
+                    window.history.pushState(null, '', window.location.href);
+                } catch(e) {}
+            }
+        }
+        
+        // 初始化时恢复页面状态
+        function initHistory() {
+            try {
+                const hash = window.location.hash.slice(1);
+                if (hash && ['dashboard', 'system_llms', 'eval_llms', 'datasets', 'rules', 'tasks', 'users', 'login'].includes(hash)) {
+                    currentPage.value = hash;
+                    pageHistory.value = [hash];
+                }
+                // 初始化浏览器历史，防止返回到外部
+                window.history.replaceState({ page: currentPage.value, historyLength: 1 }, '', '#' + currentPage.value);
+                window.history.pushState(null, '', window.location.href);
+                window.addEventListener('popstate', handlePopState);
+            } catch(e) {}
+        }
+        
+        initHistory();
         
         const loginForm = ref({ username: '', password: '' });
         const loginError = ref('');
@@ -1653,8 +1725,8 @@ const app = createApp({
             }
             
             try {
-                console.log('发送API请求:', method, `http://localhost:8001${url}`);
-                const response = await fetch(`http://localhost:8001${url}`, options);
+                console.log('发送API请求:', method, `http://localhost:8000${url}`);
+                const response = await fetch(`http://localhost:8000${url}`, options);
                 console.log('API响应状态:', response.status);
                 
                 if (response.status === 401) {
@@ -1757,6 +1829,9 @@ const app = createApp({
                 console.log('localStorage token:', localStorage.getItem('token'));
                 console.log('localStorage user:', localStorage.getItem('user'));
                 
+                // 启动SSE连接
+                connectSSE();
+                
                 // 立即切换到仪表板页面并加载数据
                 console.log('登录成功，切换到仪表板');
                 currentPage.value = 'dashboard';
@@ -1780,6 +1855,8 @@ const app = createApp({
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             localStorage.removeItem('currentPage');
+            disconnectSSE();
+            stopTaskRefresh();
         }
         
         // 加载仪表板数据
@@ -1866,6 +1943,15 @@ const app = createApp({
             if (!isLoggedIn.value) return;
             
             localStorage.setItem('currentPage', newPage);
+            // 保存到浏览器历史记录
+            if (typeof pushState === 'function') {
+                pushState(newPage);
+            } else {
+                // 如果pushState未定义，直接更新hash
+                try {
+                    window.history.pushState({ page: newPage }, '', '#' + newPage);
+                } catch(e) {}
+            }
             
             switch(newPage) {
                 case 'dashboard': loadDashboardData(); break;
@@ -2455,7 +2541,7 @@ const app = createApp({
         
         async function downloadReport(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/full_pdf`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2482,7 +2568,7 @@ const app = createApp({
         
         async function downloadFullReport(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/full_json`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_json`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2509,7 +2595,7 @@ const app = createApp({
         
         async function downloadFailedReport(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/failed_json`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/failed_json`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2536,7 +2622,7 @@ const app = createApp({
         
         async function downloadFullPdf(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/full_pdf`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/full_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2563,7 +2649,7 @@ const app = createApp({
         
         async function downloadFailedPdf(id) {
             try {
-                const response = await fetch(`http://localhost:8001/api/tasks/${id}/download/failed_pdf`, {
+                const response = await fetch(`http://localhost:8000/api/tasks/${id}/download/failed_pdf`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${token.value}`
@@ -2786,21 +2872,95 @@ app.mount('#app');
 // 添加 Math 到全局，以便在模板中使用
 app.config.globalProperties.Math = Math;
 
-// 定期刷新运行中的任务状态
-setInterval(async () => {
-    try {
-        const appInstance = document.querySelector('#app').__vue_app__;
-        if (appInstance && appInstance._instance && appInstance._instance.data && appInstance._instance.data.isLoggedIn) {
-            const instance = appInstance._instance;
-            if (instance.proxy && instance.proxy.loadTasks) {
-                // 每5秒刷新任务状态
-                await instance.proxy.loadTasks();
-            }
-        }
-    } catch (error) {
-        console.error('定期刷新任务状态失败:', error);
+// SSE 实时推送连接
+let eventSource = null;
+
+function connectSSE() {
+    if (eventSource) {
+        eventSource.close();
     }
-}, 5000);
+    
+    if (!token.value) return;
+    
+    eventSource = new EventSource(`http://localhost:8000/api/events/task-status?token=${token.value}`);
+    
+    eventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            console.log('收到SSE消息:', data);
+            
+            if (data.type === 'heartbeat') {
+                return;
+            }
+            
+            // 收到任务状态更新消息，立即刷新任务列表
+            if (data.task_id && data.status) {
+                console.log(`任务 ${data.task_id} 状态更新: ${data.status}`);
+                loadTasks();
+            }
+        } catch (e) {
+            console.error('解析SSE消息失败:', e);
+        }
+    };
+    
+    eventSource.onerror = function(error) {
+        console.error('SSE连接错误:', error);
+        // 自动重连
+        setTimeout(() => {
+            if (isLoggedIn.value) {
+                connectSSE();
+            }
+        }, 5000);
+    };
+    
+    console.log('SSE连接已建立');
+}
+
+function disconnectSSE() {
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+        console.log('SSE连接已关闭');
+    }
+}
+
+// 定期刷新运行中的任务状态
+let taskRefreshInterval = null;
+
+function startTaskRefresh() {
+    if (taskRefreshInterval) return;
+    
+    taskRefreshInterval = setInterval(async () => {
+        try {
+            if (isLoggedIn.value && token.value) {
+                // 直接调用 loadTasks 函数刷新任务状态
+                await loadTasks();
+                console.log('自动刷新任务状态');
+            }
+        } catch (error) {
+            console.error('定期刷新任务状态失败:', error);
+        }
+    }, 5000);
+}
+
+function stopTaskRefresh() {
+    if (taskRefreshInterval) {
+        clearInterval(taskRefreshInterval);
+        taskRefreshInterval = null;
+    }
+}
+
+// 登录后启动定时刷新，退出后停止
+watch(isLoggedIn, (newValue) => {
+    if (newValue) {
+        startTaskRefresh();
+    } else {
+        stopTaskRefresh();
+    }
+}, { immediate: true });
+
+// 页面卸载时清理
+window.addEventListener('beforeunload', stopTaskRefresh);
 </script>
 
 </body>
